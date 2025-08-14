@@ -5,20 +5,67 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fictief Geld Systeem</title>
 <style>
-    body { font-family: Arial, sans-serif; background: #f7f7f7; margin: 0; padding: 0; }
-    header { background: #333; color: white; padding: 10px; text-align: center; }
-    .container { max-width: 500px; margin: 20px auto; background: white; padding: 20px; border-radius: 10px; }
-    button { padding: 8px 12px; border: none; background: #28a745; color: white; border-radius: 5px; cursor: pointer; }
-    button:hover { background: #218838; }
-    input { padding: 8px; margin: 5px 0; width: 100%; }
+    body {
+        font-family: Arial, sans-serif;
+        background: linear-gradient(135deg, #f0f4f8, #d9e2ec);
+        margin: 0;
+        padding: 0;
+        color: #333;
+    }
+    header {
+        background: #4a90e2;
+        color: white;
+        padding: 15px;
+        text-align: center;
+        font-size: 1.4em;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+    .container {
+        max-width: 500px;
+        margin: 20px auto;
+        background: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    h2 { margin-top: 0; }
+    button {
+        padding: 10px 15px;
+        border: none;
+        background: #4a90e2;
+        color: white;
+        border-radius: 5px;
+        cursor: pointer;
+        margin: 5px 0;
+        font-size: 1em;
+        transition: background 0.3s;
+    }
+    button:hover { background: #3b7dc4; }
+    button.red { background: #e94e4e; }
+    button.red:hover { background: #c43d3d; }
+    input {
+        padding: 10px;
+        margin: 5px 0;
+        width: 100%;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        font-size: 1em;
+    }
     .hidden { display: none; }
-    .item { border-bottom: 1px solid #ccc; padding: 5px 0; }
+    .item {
+        border-bottom: 1px solid #eee;
+        padding: 8px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .item:last-child { border-bottom: none; }
 </style>
 </head>
 <body>
 
 <header>
-    <h1>Fictief Geld Systeem</h1>
+    💰 Fictief Geld Systeem
 </header>
 
 <!-- Hoofdpagina met accounts -->
@@ -36,7 +83,7 @@
     <p id="selectedUserName"></p>
     <input type="password" id="pincode" placeholder="Voer pincode in">
     <button onclick="checkLogin()">Inloggen</button>
-    <button onclick="goHome()">Annuleren</button>
+    <button class="red" onclick="goHome()">Annuleren</button>
 </div>
 
 <!-- Gebruiker omgeving -->
@@ -44,7 +91,8 @@
     <h2 id="welcome"></h2>
     <p>Saldo: €<span id="saldo"></span></p>
     <div id="productList"></div>
-    <button onclick="logout()">Uitloggen</button>
+    <hr>
+    <button class="red" onclick="logout()">Uitloggen</button>
 </div>
 
 <!-- Admin omgeving -->
@@ -61,7 +109,8 @@
     <input type="number" step="0.01" id="prodPrice" placeholder="Prijs">
     <button onclick="addProduct()">Product toevoegen</button>
     <div id="productAdminList"></div>
-    <button onclick="logout()">Uitloggen</button>
+    <hr>
+    <button class="red" onclick="logout()">Uitloggen</button>
 </div>
 
 <script>
@@ -87,10 +136,10 @@ function loadAccountButtons() {
     container.innerHTML = "";
     accounts.forEach((acc, i) => {
         let btn = document.createElement("button");
+        btn.style.width = "100%";
         btn.textContent = `${acc.name} (€${acc.saldo.toFixed(2)})`;
         btn.onclick = () => selectAccount(i);
         container.appendChild(btn);
-        container.appendChild(document.createElement("br"));
     });
 }
 loadAccountButtons();
@@ -119,10 +168,10 @@ function updateUserScreen() {
     document.getElementById("saldo").textContent = acc.saldo.toFixed(2);
     let list = document.getElementById("productList");
     list.innerHTML = "";
-    products.forEach((p,i) => {
+    products.forEach((p, i) => {
         let div = document.createElement("div");
         div.classList.add("item");
-        div.innerHTML = `${p.name} - €${p.price.toFixed(2)} <button onclick="buyProduct(${i})">Koop</button>`;
+        div.innerHTML = `<span>${p.name} - €${p.price.toFixed(2)}</span> <button onclick="buyProduct(${i})">Koop</button>`;
         list.appendChild(div);
     });
 }
@@ -133,7 +182,7 @@ function buyProduct(i) {
         acc.saldo -= products[i].price;
         saveData();
         updateUserScreen();
-        loadAccountButtons(); // update saldo op home
+        loadAccountButtons(); 
     } else {
         alert("Niet genoeg saldo!");
     }
@@ -153,19 +202,24 @@ function adminLogin() {
 function updateAdminScreen() {
     let accList = document.getElementById("accountList");
     accList.innerHTML = "";
-    accounts.forEach((acc,i) => {
+    accounts.forEach((acc, i) => {
         let div = document.createElement("div");
-        div.innerHTML = `${acc.name} (€${acc.saldo.toFixed(2)}) 
-            <button onclick="deleteAccount(${i})">X</button> 
-            <button onclick="addSaldo(${i})">+€</button>`;
+        div.classList.add("item");
+        div.innerHTML = `<span>${acc.name} (€${acc.saldo.toFixed(2)})</span> 
+            <span>
+                <button onclick="deleteAccount(${i})">X</button> 
+                <button onclick="addSaldo(${i})">+€</button>
+            </span>`;
         accList.appendChild(div);
     });
 
     let prodList = document.getElementById("productAdminList");
     prodList.innerHTML = "";
-    products.forEach((p,i) => {
+    products.forEach((p, i) => {
         let div = document.createElement("div");
-        div.innerHTML = `${p.name} (€${p.price.toFixed(2)}) <button onclick="deleteProduct(${i})">X</button>`;
+        div.classList.add("item");
+        div.innerHTML = `<span>${p.name} (€${p.price.toFixed(2)})</span> 
+            <button onclick="deleteProduct(${i})">X</button>`;
         prodList.appendChild(div);
     });
 }
@@ -182,7 +236,7 @@ function addAccount() {
 }
 
 function deleteAccount(i) {
-    accounts.splice(i,1);
+    accounts.splice(i, 1);
     saveData();
     loadAccountButtons();
     updateAdminScreen();
@@ -208,7 +262,7 @@ function addProduct() {
 }
 
 function deleteProduct(i) {
-    products.splice(i,1);
+    products.splice(i, 1);
     saveData();
     updateAdminScreen();
 }
@@ -217,6 +271,7 @@ function logout() {
     currentUserIndex = null;
     document.getElementById("userScreen").classList.add("hidden");
     document.getElementById("adminScreen").classList.add("hidden");
+    document.getElementById("pinScreen").classList.add("hidden");
     document.getElementById("homeScreen").classList.remove("hidden");
 }
 

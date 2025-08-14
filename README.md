@@ -1,759 +1,589 @@
 <!DOCTYPE html>
 <html lang="nl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fictief Wallet Systeem</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        .message-box {
-            animation: fadeIn 0.5s;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .bg-status-red { background-color: #fca5a5; }
-        .bg-status-orange { background-color: #fdba74; }
-
-        /* Stijlen voor de modal vensters */
-        .modal-overlay {
-            background-color: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(5px);
-            z-index: 100;
-        }
-        .modal-content {
-            animation: slideIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            z-index: 101;
-        }
-        @keyframes slideIn {
-            from { transform: scale(0.9); opacity: 0; }
-            to { transform: scale(1); opacity: 1; }
-        }
-        .balance-text-red { color: #dc2626; }
-        .balance-text-orange { color: #f97316; }
-        .list-text-red { color: #b91c1c; }
-        .list-text-orange { color: #f97316; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fictief Wallet Systeem</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <meta name="color-scheme" content="light dark">
+  <style>
+    :root { font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; }
+    .message-box { animation: fadeIn .2s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px) } to { opacity: 1; transform: translateY(0) } }
+    .bg-status-red { background-color: #fca5a5; }
+    .bg-status-orange { background-color: #fdba74; }
+    .modal-overlay{ background: rgba(0,0,0,.5); backdrop-filter: blur(4px); z-index: 50; }
+    .modal-content{ animation: pop .18s cubic-bezier(.2,.8,.2,1); z-index: 51; }
+    @keyframes pop { from{ transform: scale(.98); opacity: 0 } to{ transform: scale(1); opacity: 1 } }
+    button:disabled { opacity:.5; cursor:not-allowed }
+  </style>
 </head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+<body class="bg-gray-100 min-h-screen p-4 flex items-center justify-center">
+  <div id="app" class="w-full max-w-3xl bg-white rounded-2xl shadow-xl p-6 md:p-8">
+    <!-- App wordt via JS gerenderd -->
+  </div>
 
-    <div id="app-container" class="bg-white p-8 rounded-xl shadow-lg w-full max-w-xl text-center relative">
-        <!-- De inhoud van de applicatie wordt hier met JavaScript geladen -->
+  <!-- Edit/Confirm modals -->
+  <div id="modal-overlay" class="fixed inset-0 hidden items-center justify-center modal-overlay">
+    <div class="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+      <h3 id="modal-title" class="text-2xl font-bold mb-4 text-gray-900">Bewerken</h3>
+      <div id="modal-body" class="space-y-4"></div>
     </div>
-    
-    <!-- Modale vensters voor bewerken en bevestigen -->
-    <div id="modal-container" class="fixed inset-0 hidden items-center justify-center modal-overlay">
-        <div id="edit-modal" class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md modal-content">
-            <h3 id="modal-title" class="text-2xl font-bold mb-4 text-gray-800">Bewerk</h3>
-            <div id="modal-body" class="space-y-4">
-                <!-- Formulier voor bewerkingen wordt hier dynamisch geladen -->
-            </div>
+  </div>
+  <div id="confirm-overlay" class="fixed inset-0 hidden items-center justify-center modal-overlay">
+    <div class="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+      <h3 id="confirm-title" class="text-xl font-bold mb-2 text-gray-900">Bevestigen</h3>
+      <p id="confirm-msg" class="text-gray-600 mb-6">Weet je het zeker?</p>
+      <div class="flex justify-end gap-3">
+        <button id="confirm-cancel" class="bg-gray-200 hover:bg-gray-300 text-gray-900 font-medium px-4 py-2 rounded-lg">Annuleren</button>
+        <button id="confirm-ok" class="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg">Bevestigen</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // ====== Instellingen ======
+  const ADMIN_PIN = '1111';        // Pas aan indien gewenst
+  const VASTE_ACCOUNT_LIMIT = -25;  // Kredietlimiet voor vaste accounts
+  const GAST_ACCOUNT_LIMIT = 0;     // Min. saldo voor gastaccounts
+
+  // ====== Storage helpers ======
+  const LS_KEYS = {
+    accounts: 'wallet_accounts_v1',
+    products: 'wallet_products_v1',
+    tx: 'wallet_transactions_v1'
+  };
+  const load = (key, fallback) => {
+    try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
+  };
+  const save = (key, value) => localStorage.setItem(key, JSON.stringify(value));
+
+  // ====== App state ======
+  let accounts = load(LS_KEYS.accounts, []);
+  let products = load(LS_KEYS.products, [
+    { id: 1, name: 'Zakje chips', price: 0.75, stock: 50 },
+    { id: 2, name: 'Bierviltje',  price: 0.75, stock: 50 },
+    { id: 3, name: 'Flesje cola', price: 1.00, stock: 50 },
+  ]);
+  let transactions = load(LS_KEYS.tx, []);
+
+  // Maak admin account als die nog niet bestaat
+  if (!accounts.find(a => a.pin === ADMIN_PIN)) {
+    const nextId = accounts.length ? Math.max(...accounts.map(a => a.id)) + 1 : 1;
+    accounts.push({ id: nextId, name: 'Beheerder', pin: ADMIN_PIN, balance: 100.00, type: 'vaste' });
+    save(LS_KEYS.accounts, accounts);
+  }
+
+  let loggedIn = null;  // {id, name, pin, balance, type}
+  let isAdmin = false;
+  let qty = {}; // productId -> number
+
+  const app = document.getElementById('app');
+
+  // ====== UI helpers ======
+  const toast = (msg, type='info') => {
+    const box = document.createElement('div');
+    const colors = type==='error' ? 'bg-red-500' : (type==='ok' ? 'bg-emerald-500' : 'bg-indigo-600');
+    box.className = `message-box ${colors} text-white rounded-lg px-3 py-2 text-sm font-medium mb-3`;
+    box.textContent = msg;
+    app.prepend(box);
+    setTimeout(()=> box.remove(), 3000);
+  };
+
+  const balanceBadgeClass = (balance, type) => {
+    const limit = type==='vaste' ? VASTE_ACCOUNT_LIMIT : GAST_ACCOUNT_LIMIT;
+    if (balance < limit) return 'bg-status-red text-white';
+    if (balance < 5) return 'bg-status-orange text-white';
+    return 'bg-gray-200 text-gray-900';
+  };
+
+  const fmt = (n) => n.toFixed(2);
+
+  // ====== Views ======
+  const viewHome = () => {
+    isAdmin = false; loggedIn = null; qty = {};
+    const nonAdmin = accounts.filter(a => a.pin !== ADMIN_PIN);
+    app.innerHTML = `
+      <h1 class="text-3xl font-extrabold text-gray-900 mb-1">Fictief Wallet Systeem</h1>
+      <p class="text-gray-600 mb-6">Selecteer een account en log in met je pincode.</p>
+
+      ${nonAdmin.length ? `
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          ${nonAdmin.map(a => `
+            <button data-id="${a.id}" class="account-btn flex items-center justify-between gap-3 p-3 rounded-xl shadow-sm border hover:shadow transition bg-white">
+              <span class="font-semibold text-gray-900">${a.name}</span>
+              <span class="text-xs px-2 py-1 rounded ${balanceBadgeClass(a.balance, a.type)}">€${fmt(a.balance)}</span>
+            </button>
+          `).join('')}
         </div>
-    </div>
+      ` : `<div class="p-4 rounded-xl bg-gray-50 border">Nog geen accounts. Log in als beheerder om te beginnen.</div>`}
 
-    <!-- Confirm modal -->
-    <div id="confirm-modal-container" class="fixed inset-0 hidden items-center justify-center modal-overlay">
-        <div id="confirm-modal" class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm modal-content text-center">
-            <h3 id="confirm-title" class="text-xl font-bold mb-4 text-gray-800">Bevestig</h3>
-            <p id="confirm-message" class="mb-6 text-gray-600">Weet je het zeker?</p>
-            <div class="flex justify-end gap-4">
-                <button id="confirm-cancel" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">Annuleren</button>
-                <button id="confirm-ok" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">Bevestigen</button>
-            </div>
+      <div class="mt-6">
+        <button id="btn-admin" class="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-900 font-semibold">Admin login</button>
+      </div>
+    `;
+
+    document.querySelectorAll('.account-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const id = parseInt(e.currentTarget.getAttribute('data-id'));
+        loggedIn = accounts.find(a => a.id === id) || null;
+        viewPin();
+      });
+    });
+    document.getElementById('btn-admin').addEventListener('click', () => {
+      loggedIn = accounts.find(a => a.pin === ADMIN_PIN);
+      viewPin();
+    });
+  };
+
+  const viewPin = () => {
+    if (!loggedIn) return viewHome();
+    app.innerHTML = `
+      <h1 class="text-3xl font-extrabold text-gray-900 mb-1">Fictief Wallet Systeem</h1>
+      <p class="text-gray-600 mb-6">Welkom, <span class="font-semibold">${loggedIn.name}</span></p>
+      <form id="pin-form" class="space-y-4">
+        <input id="pin" type="password" maxlength="4" inputmode="numeric" autocomplete="one-time-code"
+               class="w-full p-4 text-center text-2xl tracking-widest rounded-xl border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+               placeholder="Voer je PIN in" />
+        <div class="grid grid-cols-2 gap-3">
+          <button class="px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold" type="submit">Inloggen</button>
+          <button id="back" class="px-4 py-3 rounded-xl bg-gray-200 hover:bg-gray-300 text-gray-900 font-semibold" type="button">Terug</button>
         </div>
-    </div>
+      </form>
+    `;
+    document.getElementById('pin-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const pin = document.getElementById('pin').value.trim();
+      if (pin === loggedIn.pin) {
+        isAdmin = pin === ADMIN_PIN;
+        toast(`Welkom, ${loggedIn.name}!`, 'ok');
+        isAdmin ? viewAdmin() : viewUser();
+      } else {
+        toast('Ongeldige PIN. Probeer opnieuw.', 'error');
+      }
+    });
+    document.getElementById('back').addEventListener('click', viewHome);
+  };
 
+  const viewAdmin = () => {
+    // Kleine helper voor options
+    const options = (vals, v) => vals.map(o => `<option value="${o}" ${o===v?'selected':''}>${o}</option>`).join('');
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const appContainer = document.getElementById('app-container');
-            
-            // Variabelen voor de applicatiestatus
-            let ADMIN_PIN = '1111'; // PIN van de hoofd-admin
-            const VASTE_ACCOUNT_LIMIT = -25;
-            const GAST_ACCOUNT_LIMIT = 0;
+    app.innerHTML = `
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h1 class="text-3xl font-extrabold text-gray-900">Beheerderspaneel</h1>
+          <p class="text-gray-600">Ingelogd als ${loggedIn.name}</p>
+        </div>
+        <button id="logout" class="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold">Uitloggen</button>
+      </div>
 
-            // Functies om data op te slaan in localStorage
-            const saveAccounts = () => {
-                localStorage.setItem('fictional-accounts', JSON.stringify(accounts));
-            };
-            const saveProducts = () => {
-                localStorage.setItem('fictional-products', JSON.stringify(products));
-            };
-            const saveTransactions = () => {
-                localStorage.setItem('fictional-transactions', JSON.stringify(transactions));
-            };
+      <!-- Geld toevoegen -->
+      <section class="mb-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-2">Geld toevoegen</h2>
+        <div class="flex gap-2 items-stretch">
+          <select id="sel-user" class="flex-1 p-3 rounded-xl border-2">
+            <option value="">Kies gebruiker…</option>
+            ${accounts.map(a => `<option value="${a.id}">${a.name} (${a.type}) — €${fmt(a.balance)}</option>`).join('')}
+          </select>
+          <input id="amount" type="number" step="0.01" placeholder="Bedrag" class="w-40 p-3 rounded-xl border-2" />
+          <button id="btn-add" class="px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold">Toevoegen</button>
+        </div>
+      </section>
 
-            // Haal de accounts uit localStorage of initialiseer ze
-            let accounts = JSON.parse(localStorage.getItem('fictional-accounts')) || [];
-            let products = JSON.parse(localStorage.getItem('fictional-products')) || [
-                { id: 1, name: 'Zakje chips', price: 0.75, stock: 50 },
-                { id: 2, name: 'Bierveltje', price: 0.75, stock: 50 },
-                { id: 3, name: 'Flesje cola', price: 1.00, stock: 50 }
-            ];
-            let transactions = JSON.parse(localStorage.getItem('fictional-transactions')) || [];
-            
-            // Zoek naar een bestaand hoofd-adminaccount
-            let headAdminAccount = accounts.find(acc => acc.role === 'hoofd-admin');
-            if (headAdminAccount) {
-                 ADMIN_PIN = headAdminAccount.pin;
-            } else {
-                 // Voeg een standaard hoofd-adminaccount toe als het er nog niet is
-                accounts.push({ id: accounts.length > 0 ? Math.max(...accounts.map(acc => acc.id)) + 1 : 1, name: 'Sjoerd (Hoofd Admin)', pin: ADMIN_PIN, balance: 100.00, type: 'vaste', role: 'hoofd-admin' });
-                saveAccounts();
-            }
+      <!-- Productbeheer -->
+      <section class="mb-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-2">Productbeheer</h2>
+        <div class="bg-gray-50 border rounded-xl p-3 max-h-56 overflow-auto" id="admin-products">
+          ${products.length ? products.map(p => `
+            <div class="flex items-center justify-between gap-3 py-2 border-b last:border-b-0 text-sm">
+              <div class="font-medium text-gray-900">${p.name}</div>
+              <div class="text-gray-600">€${fmt(p.price)}</div>
+              <div class="text-gray-600">Voorraad: ${p.stock}</div>
+              <div class="flex gap-2">
+                <button data-id="${p.id}" class="btn-edit-product text-indigo-600 hover:underline">Bewerk</button>
+                <button data-id="${p.id}" class="btn-del-product text-red-600 hover:underline">Verwijder</button>
+              </div>
+            </div>
+          `).join('') : '<div class="text-gray-500">Geen producten.</div>'}
+        </div>
+        <form id="form-add-prod" class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
+          <input id="prod-name" class="p-3 rounded-xl border-2" placeholder="Naam" />
+          <input id="prod-price" type="number" step="0.01" class="p-3 rounded-xl border-2" placeholder="Prijs" />
+          <div class="flex gap-2">
+            <input id="prod-stock" type="number" class="p-3 rounded-xl border-2 w-full" placeholder="Voorraad" />
+            <button class="px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold">Toevoegen</button>
+          </div>
+        </form>
+      </section>
 
-            let loggedInUser = null;
-            let isAdminMode = false;
-            let quantities = {};
-            let selectedAdminUser = null;
+      <!-- Accounts overzicht & bewerk -->
+      <section class="mb-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-2">Accounts</h2>
+        <div class="bg-gray-50 border rounded-xl p-3 max-h-56 overflow-auto" id="admin-accounts">
+          ${accounts.map(a => `
+            <div class="flex items-center justify-between gap-3 py-2 border-b last:border-b-0 text-sm">
+              <div class="flex items-center gap-2">
+                <div class="font-semibold text-gray-900">${a.name}</div>
+                <span class="text-gray-500">(${a.type})</span>
+              </div>
+              <div class="text-gray-600">€${fmt(a.balance)}</div>
+              <button data-id="${a.id}" class="btn-edit-account text-indigo-600 hover:underline">Bewerk</button>
+            </div>
+          `).join('')}
+        </div>
+        <form id="form-add-acc" class="grid grid-cols-1 sm:grid-cols-4 gap-2 mt-3">
+          <input id="acc-name" class="p-3 rounded-xl border-2" placeholder="Naam" />
+          <select id="acc-type" class="p-3 rounded-xl border-2">
+            <option value="vaste">Vast account</option>
+            <option value="gast">Gast account</option>
+          </select>
+          <input id="acc-pin" type="password" maxlength="4" class="p-3 rounded-xl border-2" placeholder="PIN (4 cijfers)" />
+          <button class="px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold">Nieuw account</button>
+        </form>
+      </section>
 
-            // Functie om een bericht weer te geven
-            const showMessage = (msg, isError = false) => {
-                const messageBox = document.createElement('div');
-                messageBox.className = `message-box mb-4 text-sm font-medium text-white p-3 rounded-lg ${isError ? 'bg-red-500' : 'bg-indigo-500'}`;
-                messageBox.textContent = msg;
-                appContainer.insertBefore(messageBox, appContainer.firstChild);
+      <!-- Transacties -->
+      <section class="mb-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-2">Transactielogboek</h2>
+        <div class="bg-gray-50 border rounded-xl p-3 max-h-56 overflow-auto" id="tx-log">
+          ${transactions.length ? transactions.slice().reverse().map(t => `
+            <div class="py-2 border-b last:border-b-0 text-sm text-gray-800">
+              <div class="font-medium">${t.user}: €${fmt(t.amount)} — ${t.items}</div>
+              <div class="text-xs text-gray-500">${new Date(t.date).toLocaleString('nl-NL')}</div>
+            </div>
+          `).join('') : '<div class="text-gray-500">Geen transacties.</div>'}
+        </div>
+      </section>
 
-                setTimeout(() => {
-                    messageBox.remove();
-                }, 3000);
-            };
+      <!-- Backup & reset -->
+      <section class="mb-2">
+        <div class="flex flex-wrap gap-2">
+          <button id="btn-export" class="px-4 py-2 rounded-lg border font-medium">Exporteer data (JSON)</button>
+          <label class="px-4 py-2 rounded-lg border font-medium cursor-pointer">
+            Importeer data
+            <input id="input-import" type="file" accept="application/json" class="hidden" />
+          </label>
+          <button id="btn-reset" class="px-4 py-2 rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 font-semibold">Alles resetten</button>
+        </div>
+      </section>
+    `;
 
-            // Bepaal de kleurklasse op basis van het saldo en accounttype
-            const getBalanceColorClass = (balance, type) => {
-                if (balance < (type === 'vaste' ? VASTE_ACCOUNT_LIMIT : GAST_ACCOUNT_LIMIT)) {
-                    return 'bg-status-red text-white';
-                }
-                if (balance < 5) {
-                    return 'bg-status-orange text-white';
-                }
-                return 'bg-gray-200 text-gray-800';
-            };
+    // Events
+    document.getElementById('logout').addEventListener('click', viewHome);
 
-            // Functie voor uitloggen
-            const handleLogout = () => {
-                loggedInUser = null;
-                isAdminMode = false;
-                renderHomeView();
-                showMessage('U bent uitgelogd.');
-            };
+    // Geld toevoegen
+    document.getElementById('btn-add').addEventListener('click', () => {
+      const id = parseInt(document.getElementById('sel-user').value);
+      const amt = parseFloat(document.getElementById('amount').value);
+      const u = accounts.find(a => a.id === id);
+      if (!u || isNaN(amt) || amt <= 0) return toast('Kies gebruiker en geldig bedrag.', 'error');
+      u.balance = +(u.balance + amt).toFixed(2);
+      save(LS_KEYS.accounts, accounts);
+      viewAdmin();
+      toast(`€${fmt(amt)} toegevoegd aan ${u.name}.`, 'ok');
+    });
 
-            // Functie om de homepagina te renderen (account selectie)
-            const renderHomeView = () => {
-                appContainer.innerHTML = `
-                    <h1 class="text-3xl font-bold mb-6 text-gray-800">Fictief Wallet Systeem</h1>
-                    <h2 class="text-2xl font-semibold mb-4 text-gray-700">Selecteer uw account</h2>
-                    ${accounts.filter(acc => acc.role !== 'hoofd-admin').length > 0 ? 
-                        `<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                            ${accounts.filter(acc => acc.role !== 'hoofd-admin').map(acc => `
-                                <button data-account-id="${acc.id}" class="select-account-button font-bold p-3 rounded-lg transition-colors transform hover:scale-105 ${getBalanceColorClass(acc.balance, acc.type)}">
-                                    <span>${acc.name}</span>
-                                </button>
-                            `).join('')}
-                        </div>` :
-                        '<p class="text-gray-500">Er zijn nog geen accounts aangemaakt. Log in als beheerder om te beginnen.</p>'
-                    }
-                    <div class="mt-6">
-                        <button type="button" id="admin-login-button" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold p-3 rounded-lg transition-colors">
-                            Admin Login
-                        </button>
-                    </div>
-                `;
+    // Product toevoegen
+    document.getElementById('form-add-prod').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = document.getElementById('prod-name').value.trim();
+      const price = parseFloat(document.getElementById('prod-price').value);
+      const stock = parseInt(document.getElementById('prod-stock').value, 10);
+      if (!name || isNaN(price) || price <= 0 || isNaN(stock) || stock < 0) return toast('Ongeldige productgegevens.', 'error');
+      const nextId = products.length ? Math.max(...products.map(p => p.id)) + 1 : 1;
+      products.push({ id: nextId, name, price, stock });
+      save(LS_KEYS.products, products);
+      viewAdmin();
+      toast(`Product ‘${name}’ toegevoegd.`, 'ok');
+    });
 
-                // Event listener voor het selecteren van een account
-                document.querySelectorAll('.select-account-button').forEach(button => {
-                    button.addEventListener('click', (e) => {
-                        const accountId = parseInt(e.target.dataset.accountId);
-                        loggedInUser = accounts.find(acc => acc.id === accountId);
-                        renderPinView();
-                    });
-                });
-
-                // Event listener voor de admin login knop
-                document.getElementById('admin-login-button').addEventListener('click', () => {
-                    loggedInUser = accounts.find(acc => acc.pin === ADMIN_PIN);
-                    renderPinView();
-                });
-            };
-
-            // Functie om de PIN-invoerpagina te renderen
-            const renderPinView = () => {
-                if (!loggedInUser) {
-                    renderHomeView();
-                    return;
-                }
-                const isHeadAdmin = loggedInUser.role === 'hoofd-admin';
-                appContainer.innerHTML = `
-                    <h1 class="text-3xl font-bold mb-6 text-gray-800">Fictief Wallet Systeem</h1>
-                    <h2 class="text-2xl font-semibold mb-4 text-gray-700">${isHeadAdmin ? 'Welkom in het beheerderspaneel!' : `Welkom, ${loggedInUser.name}!`}</h2>
-                    <form id="pin-form" class="space-y-4">
-                        <input
-                            type="password"
-                            id="pin-input"
-                            placeholder="Voer uw PIN in"
-                            maxlength="4"
-                            class="w-full p-4 text-center text-xl tracking-widest rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
-                        <div class="grid grid-cols-2 gap-4 mt-6">
-                            <button
-                                type="submit"
-                                class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold p-3 rounded-lg transition-colors transform hover:scale-105"
-                            >
-                                Inloggen
-                            </button>
-                            <button
-                                type="button"
-                                id="back-button"
-                                class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold p-3 rounded-lg transition-colors"
-                            >
-                                Terug
-                            </button>
-                        </div>
-                    </form>
-                `;
-
-                document.getElementById('pin-form').addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    const pinInput = document.getElementById('pin-input').value;
-                    if (pinInput === loggedInUser.pin) {
-                        if (loggedInUser.role === 'hoofd-admin' || loggedInUser.role === 'sub-admin') {
-                            isAdminMode = true;
-                            renderAdminView();
-                        } else {
-                            renderUserDashboard();
-                        }
-                        showMessage(`Welkom, ${loggedInUser.name}!`);
-                    } else {
-                        showMessage('Ongeldige PIN. Probeer het opnieuw.', true);
-                    }
-                });
-
-                document.getElementById('back-button').addEventListener('click', () => {
-                    loggedInUser = null;
-                    renderHomeView();
-                });
-            };
-            
-            // Functie om de beheerderspagina te renderen
-            const renderAdminView = () => {
-                const isHeadAdmin = loggedInUser.role === 'hoofd-admin';
-                const isSubAdmin = loggedInUser.role === 'sub-admin';
-
-                appContainer.innerHTML = `
-                    <h1 class="text-3xl font-bold mb-6 text-gray-800">Fictief Wallet Systeem</h1>
-                    <h2 class="text-2xl font-semibold mb-4 text-gray-700">Beheerderspaneel</h2>
-                    
-                    <!-- Sectie: Beheerdersfuncties -->
-                    <div class="mb-6 text-left">
-                        <h3 class="text-xl font-semibold mb-2 text-gray-700">Beheerdersfuncties</h3>
-                        
-                        <!-- Admin PIN wijzigen (alleen voor hoofd-admin) -->
-                        ${isHeadAdmin ? `
-                            <div class="mb-4">
-                                <h4 class="font-semibold text-gray-700 mb-2">PIN van hoofd-admin wijzigen</h4>
-                                <div class="flex gap-2">
-                                    <input
-                                        type="password"
-                                        id="new-admin-pin"
-                                        placeholder="Nieuwe PIN (4 cijfers)"
-                                        maxlength="4"
-                                        class="flex-grow p-3 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    />
-                                    <button id="change-admin-pin-button" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold p-3 rounded-lg transition-colors">
-                                        Wijzig
-                                    </button>
-                                </div>
-                            </div>
-                        ` : ''}
-
-                        <!-- Geld toevoegen aan individuele accounts (voor sub-admins en hoofd-admins) -->
-                        ${isHeadAdmin || isSubAdmin ? `
-                            <div class="mb-4">
-                                <h4 class="font-semibold text-gray-700 mb-2">Geld toevoegen aan account</h4>
-                                <select id="admin-user-select" class="w-full p-3 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-2">
-                                    <option value="">Selecteer een gebruiker</option>
-                                    ${accounts.filter(acc => acc.role !== 'hoofd-admin').map(acc => `<option value="${acc.id}">${acc.name} (${acc.type}) - €${acc.balance.toFixed(2)}</option>`).join('')}
-                                </select>
-                                <div class="flex">
-                                    <input
-                                        type="number"
-                                        id="amount-input-single"
-                                        placeholder="Bedrag"
-                                        class="flex-grow p-3 rounded-l-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    />
-                                    <button
-                                        id="add-money-button-single"
-                                        class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold p-3 rounded-r-lg transition-colors"
-                                    >
-                                        Toevoegen
-                                    </button>
-                                </div>
-                            </div>
-                        ` : ''}
-
-                        <!-- Account aanmaken (voor sub-admins en hoofd-admins) -->
-                        ${isHeadAdmin || isSubAdmin ? `
-                            <div class="mb-4">
-                                <h4 class="font-semibold text-gray-700 mb-2">Account aanmaken</h4>
-                                <form id="create-account-form" class="space-y-2">
-                                    <input
-                                        type="text"
-                                        id="new-account-name"
-                                        placeholder="Accountnaam"
-                                        class="w-full p-2 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    />
-                                    <select id="new-account-type" class="w-full p-2 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                                        <option value="vaste">Vast account</option>
-                                        <option value="gast">Gast account</option>
-                                    </select>
-                                    <input
-                                        type="password"
-                                        id="new-account-pin"
-                                        placeholder="PIN-code (max 4 cijfers)"
-                                        maxlength="4"
-                                        class="w-full p-2 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    />
-                                    <button
-                                        type="submit"
-                                        class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold p-2 rounded-lg transition-colors">
-                                        Nieuw account aanmaken
-                                    </button>
-                                </form>
-                            </div>
-                        ` : ''}
-                    </div>
-
-                    <!-- Sectie: Productbeheer -->
-                    <div class="mb-6 text-left">
-                        <h3 class="text-xl font-semibold mb-2 text-gray-700">Productbeheer</h3>
-                        <div id="product-list-admin" class="bg-gray-100 p-4 rounded-lg mb-4 max-h-48 overflow-y-auto">
-                            ${products.length > 0 ? products.map(product => `
-                                <div class="flex justify-between items-center py-2 border-b last:border-b-0 border-gray-200">
-                                    <span class="font-medium text-gray-700">${product.name}</span>
-                                    <span class="text-gray-500">€${product.price.toFixed(2)}</span>
-                                    <span class="text-gray-500">Voorraad: ${product.stock}</span>
-                                    <div class="flex gap-2">
-                                        <button data-product-id="${product.id}" class="edit-product-button text-sm text-indigo-600 hover:underline">Bewerk</button>
-                                        <button data-product-id="${product.id}" class="delete-product-button text-sm text-red-500 hover:underline">Verwijder</button>
-                                    </div>
-                                </div>
-                            `).join('') : '<p class="text-gray-500">Geen producten beschikbaar.</p>'}
-                        </div>
-                        <form id="add-product-form" class="space-y-2">
-                            <input type="text" id="new-product-name" placeholder="Nieuwe productnaam" class="w-full p-2 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                            <input type="number" id="new-product-price" placeholder="Prijs (bijv. 0.75)" step="0.01" class="w-full p-2 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                            <input type="number" id="new-product-stock" placeholder="Voorraad" class="w-full p-2 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold p-2 rounded-lg transition-colors">Product toevoegen</button>
-                        </form>
-                    </div>
-
-                    <!-- Sectie: Overzicht van accounts -->
-                    <div class="mb-6 text-left">
-                        <h3 class="text-xl font-semibold mb-2 text-gray-700">Alle accounts</h3>
-                        <div id="account-list-admin" class="bg-gray-100 p-4 rounded-lg max-h-48 overflow-y-auto">
-                            ${accounts.length > 0 ? accounts.map(acc => `
-                                <div class="flex justify-between items-center py-2 border-b last:border-b-0 border-gray-200">
-                                    <div class="flex items-center gap-2">
-                                        <span class="font-medium text-gray-800 ${acc.balance < (acc.type === 'vaste' ? VASTE_ACCOUNT_LIMIT : GAST_ACCOUNT_LIMIT) ? 'list-text-red' : acc.balance < 5 ? 'list-text-orange' : ''}">${acc.name}</span>
-                                        <span class="text-sm text-gray-500">(${acc.type}${acc.role ? `, ${acc.role}` : ''})</span>
-                                    </div>
-                                    <div class="flex items-center gap-4">
-                                        <span class="text-gray-500">€${acc.balance.toFixed(2)}</span>
-                                        <button data-account-id="${acc.id}" class="edit-account-button text-sm text-indigo-600 hover:underline">Bewerk</button>
-                                        ${acc.role !== 'hoofd-admin' ? `<button data-account-id="${acc.id}" class="delete-account-button text-sm text-red-500 hover:underline">Verwijder</button>` : ''}
-                                    </div>
-                                </div>
-                            `).join('') : '<p class="text-gray-500">Geen accounts beschikbaar.</p>'}
-                        </div>
-                    </div>
-                    
-                    <!-- Sectie: Transactielogboek -->
-                    <div class="mb-6 text-left">
-                        <h3 class="text-xl font-semibold mb-2 text-gray-700">Transactielogboek</h3>
-                        <div id="transaction-log-admin" class="bg-gray-100 p-4 rounded-lg max-h-48 overflow-y-auto">
-                            ${transactions.length > 0 ? transactions.map(t => `
-                                <div class="py-2 border-b last:border-b-0 border-gray-200 text-sm text-gray-700 text-left">
-                                    <p class="font-medium">${t.user}: €${t.amount.toFixed(2)} - ${t.items}</p>
-                                    <p class="text-xs text-gray-500">${new Date(t.date).toLocaleString('nl-NL')}</p>
-                                </div>
-                            `).join('') : '<p class="text-gray-500">Geen transacties beschikbaar.</p>'}
-                        </div>
-                    </div>
-
-                    <button
-                        id="logout-button"
-                        class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors mt-4"
-                    >
-                        Uitloggen
-                    </button>
-                `;
-                
-                // Event listeners voor het beheerderspaneel
-                if (isHeadAdmin) {
-                     document.getElementById('change-admin-pin-button').addEventListener('click', () => {
-                        const newPin = document.getElementById('new-admin-pin').value;
-                        const adminAccount = accounts.find(acc => acc.role === 'hoofd-admin');
-                        if (newPin.length === 4 && !isNaN(parseInt(newPin)) && !accounts.some(acc => acc.pin === newPin && acc.id !== adminAccount.id)) {
-                             ADMIN_PIN = newPin;
-                             adminAccount.pin = newPin;
-                             saveAccounts();
-                             renderAdminView();
-                             showMessage('PIN van hoofd-admin succesvol gewijzigd.');
-                        } else {
-                            showMessage('Ongeldige PIN. PIN moet 4 cijfers lang zijn en uniek.', true);
-                        }
-                     });
-                }
-               
-                if (isHeadAdmin || isSubAdmin) {
-                    document.getElementById('admin-user-select').addEventListener('change', (e) => {
-                        selectedAdminUser = accounts.find(acc => acc.id === parseInt(e.target.value));
-                    });
-
-                    document.getElementById('add-money-button-single').addEventListener('click', () => {
-                        const amountToAdd = parseFloat(document.getElementById('amount-input-single').value);
-                        if (!selectedAdminUser || isNaN(amountToAdd) || amountToAdd <= 0) {
-                            showMessage('Selecteer een gebruiker en voer een geldig bedrag in.', true);
-                            return;
-                        }
-                        accounts = accounts.map(acc =>
-                            acc.id === selectedAdminUser.id
-                                ? { ...acc, balance: acc.balance + amountToAdd }
-                                : acc
-                        );
-                        saveAccounts();
-                        renderAdminView();
-                        showMessage(`€${amountToAdd.toFixed(2)} is toegevoegd aan het saldo van ${selectedAdminUser.name}.`);
-                    });
-
-                    document.getElementById('create-account-form').addEventListener('submit', (e) => {
-                        e.preventDefault();
-                        const newName = document.getElementById('new-account-name').value;
-                        const newPin = document.getElementById('new-account-pin').value;
-                        const newType = document.getElementById('new-account-type').value;
-
-                        if (!newName || !newPin || newPin.length !== 4) {
-                            showMessage('Naam, type en PIN zijn verplicht en PIN moet 4 cijfers lang zijn.', true);
-                            return;
-                        }
-                        if (accounts.some(acc => acc.pin === newPin)) {
-                            showMessage('Deze PIN is al in gebruik. Kies een andere.', true);
-                            return;
-                        }
-                        const newAccount = {
-                            id: accounts.length > 0 ? Math.max(...accounts.map(acc => acc.id)) + 1 : 1,
-                            name: newName,
-                            pin: newPin,
-                            balance: 0.00,
-                            type: newType,
-                            role: 'user' // Nieuwe accounts krijgen standaard de rol 'user'
-                        };
-                        accounts.push(newAccount);
-                        saveAccounts();
-                        renderAdminView();
-                        showMessage(`Account '${newName}' succesvol aangemaakt.`);
-                    });
-                }
-
-                document.getElementById('product-list-admin').addEventListener('click', (e) => {
-                    if (e.target.classList.contains('edit-product-button')) {
-                        const productId = parseInt(e.target.dataset.productId);
-                        const product = products.find(p => p.id === productId);
-                        showEditModal({
-                            title: `Bewerk product: ${product.name}`,
-                            fields: [
-                                { id: 'edit-name', label: 'Naam', value: product.name, type: 'text' },
-                                { id: 'edit-price', label: 'Prijs', value: product.price.toFixed(2), type: 'number', step: '0.01' },
-                                { id: 'edit-stock', label: 'Voorraad', value: product.stock, type: 'number' }
-                            ],
-                            onSave: (formData) => {
-                                const newName = formData['edit-name'];
-                                const newPrice = parseFloat(formData['edit-price']);
-                                const newStock = parseInt(formData['edit-stock'], 10);
-                                if (!newName || isNaN(newPrice) || newPrice <= 0 || isNaN(newStock) || newStock < 0) {
-                                    showMessage('Ongeldige invoer. Product niet bijgewerkt.', true);
-                                    return;
-                                }
-                                products = products.map(p => p.id === productId ? { ...p, name: newName, price: newPrice, stock: newStock } : p);
-                                saveProducts();
-                                renderAdminView();
-                                showMessage(`Product '${newName}' is bijgewerkt.`);
-                            }
-                        });
-                    } else if (e.target.classList.contains('delete-product-button')) {
-                        const productId = parseInt(e.target.dataset.productId);
-                        const product = products.find(p => p.id === productId);
-                        showConfirmModal(`Product '${product.name}' verwijderen`, `Weet je zeker dat je het product '${product.name}' wilt verwijderen?`, () => {
-                            products = products.filter(p => p.id !== productId);
-                            saveProducts();
-                            renderAdminView();
-                            showMessage('Product succesvol verwijderd.');
-                        });
-                    }
-                });
-
-                document.getElementById('account-list-admin').addEventListener('click', (e) => {
-                    if (e.target.classList.contains('edit-account-button')) {
-                        const accountId = parseInt(e.target.dataset.accountId);
-                        const account = accounts.find(a => a.id === accountId);
-                        showEditModal({
-                            title: `Bewerk account: ${account.name}`,
-                            fields: [
-                                { id: 'edit-name', label: 'Naam', value: account.name, type: 'text' },
-                                { id: 'edit-pin', label: 'PIN', value: account.pin, type: 'password', maxlength: '4' },
-                                { id: 'edit-type', label: 'Type', value: account.type, type: 'select', options: ['vaste', 'gast'] },
-                                { id: 'edit-role', label: 'Rol', value: account.role || 'user', type: 'select', options: ['user', 'sub-admin', 'hoofd-admin'] }
-                            ],
-                            onSave: (formData) => {
-                                const newName = formData['edit-name'];
-                                const newPin = formData['edit-pin'];
-                                const newType = formData['edit-type'];
-                                const newRole = formData['edit-role'];
-                                
-                                if (!newName || !newPin || newPin.length !== 4) {
-                                    showMessage('Ongeldige invoer. Account niet bijgewerkt.', true);
-                                    return;
-                                }
-                                if (accounts.some(acc => acc.pin === newPin && acc.id !== accountId)) {
-                                    showMessage('Deze PIN is al in gebruik. Pincode niet aangepast.', true);
-                                    return;
-                                }
-                                
-                                accounts = accounts.map(a => a.id === accountId ? { ...a, name: newName, pin: newPin, type: newType, role: newRole } : a);
-                                saveAccounts();
-                                if (accountId === accounts.find(acc => acc.role === 'hoofd-admin').id) {
-                                    ADMIN_PIN = newPin;
-                                }
-                                renderAdminView();
-                                showMessage(`Account van ${newName} is bijgewerkt.`);
-                            }
-                        });
-                    } else if (e.target.classList.contains('delete-account-button')) {
-                         const accountId = parseInt(e.target.dataset.accountId);
-                         const account = accounts.find(a => a.id === accountId);
-                         showConfirmModal(`Account '${account.name}' verwijderen`, `Weet je zeker dat je het account van '${account.name}' wilt verwijderen? Dit kan niet ongedaan worden gemaakt.`, () => {
-                             accounts = accounts.filter(a => a.id !== accountId);
-                             saveAccounts();
-                             renderAdminView();
-                             showMessage(`Account van ${account.name} succesvol verwijderd.`);
-                         });
-                    }
-                });
-
-                document.getElementById('logout-button').addEventListener('click', handleLogout);
-            };
-
-            // Functie om het gebruikersdashboard te renderen
-            const renderUserDashboard = () => {
-                appContainer.innerHTML = `
-                    <h1 class="text-3xl font-bold mb-6 text-gray-800">Fictief Wallet Systeem</h1>
-                    <h2 class="text-2xl font-semibold mb-4 text-gray-700">Welkom, ${loggedInUser.name}!</h2>
-                    <div class="text-2xl font-bold mb-6">
-                        Saldo: €<span id="user-balance" class="${loggedInUser.balance < (loggedInUser.type === 'vaste' ? VASTE_ACCOUNT_LIMIT : GAST_ACCOUNT_LIMIT) ? 'balance-text-red' : loggedInUser.balance < 5 ? 'balance-text-orange' : 'text-indigo-600'}">${loggedInUser.balance.toFixed(2)}</span>
-                    </div>
-
-                    <div id="product-list" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 text-left">
-                        ${products.map(product => `
-                            <div class="flex items-center justify-between bg-gray-100 p-4 rounded-lg shadow-sm">
-                                <div class="flex-grow">
-                                    <h3 class="font-bold text-gray-700">${product.name}</h3>
-                                    <p class="text-gray-500">€${product.price.toFixed(2)}</p>
-                                    <p class="text-sm text-gray-500">Op voorraad: ${product.stock}</p>
-                                </div>
-                                <input
-                                    type="number"
-                                    data-product-id="${product.id}"
-                                    value="${quantities[product.id] || 0}"
-                                    min="0"
-                                    max="${product.stock}"
-                                    class="quantity-input w-16 p-2 rounded-lg border text-center"
-                                />
-                            </div>
-                        `).join('')}
-                    </div>
-
-                    <div class="mb-4">
-                        <p class="text-xl font-bold text-gray-800">
-                            Totaal: €<span id="total-cost">0.00</span>
-                        </p>
-                    </div>
-
-                    <button
-                        id="purchase-button"
-                        class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition-colors transform hover:scale-105"
-                    >
-                        Aankopen
-                    </button>
-                    <button
-                        id="logout-button"
-                        class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors mt-4"
-                    >
-                        Terug
-                    </button>
-                `;
-
-                quantities = products.reduce((acc, product) => {
-                    acc[product.id] = quantities[product.id] || 0;
-                    return acc;
-                }, {});
-
-                const updateTotals = () => {
-                    const totalCost = Object.keys(quantities).reduce((total, productId) => {
-                        const product = products.find(p => p.id === parseInt(productId));
-                        return total + (product ? product.price * quantities[productId] : 0);
-                    }, 0);
-                    document.getElementById('total-cost').textContent = totalCost.toFixed(2);
-                };
-
-                document.querySelectorAll('.quantity-input').forEach(input => {
-                    input.addEventListener('change', (e) => {
-                        const productId = parseInt(e.target.dataset.productId);
-                        const value = Math.max(0, parseInt(e.target.value, 10) || 0);
-                        quantities[productId] = value;
-                        updateTotals();
-                    });
-                });
-                
-                document.getElementById('purchase-button').addEventListener('click', () => {
-                    const totalCost = parseFloat(document.getElementById('total-cost').textContent);
-                    const newBalance = loggedInUser.balance - totalCost;
-                    const creditLimit = loggedInUser.type === 'vaste' ? VASTE_ACCOUNT_LIMIT : GAST_ACCOUNT_LIMIT;
-
-                    if (newBalance >= creditLimit) {
-                        // Update stock
-                        Object.keys(quantities).forEach(productId => {
-                            const quantity = quantities[productId];
-                            if (quantity > 0) {
-                                products = products.map(p => 
-                                    p.id === parseInt(productId) ? { ...p, stock: p.stock - quantity } : p
-                                );
-                            }
-                        });
-                        saveProducts();
-
-                        loggedInUser.balance = newBalance;
-                        accounts = accounts.map(acc => acc.id === loggedInUser.id ? loggedInUser : acc);
-                        saveAccounts();
-
-                        // Log de transactie
-                        const transactionItems = Object.keys(quantities).map(productId => {
-                            const product = products.find(p => p.id === parseInt(productId));
-                            return `${product.name} (${quantities[productId]}x)`;
-                        }).filter(item => !item.includes('(0x)')).join(', ');
-
-                        transactions.push({
-                            id: transactions.length > 0 ? Math.max(...transactions.map(t => t.id)) + 1 : 1,
-                            user: loggedInUser.name,
-                            amount: totalCost,
-                            items: transactionItems,
-                            date: new Date().toISOString()
-                        });
-                        saveTransactions();
-
-                        document.getElementById('user-balance').textContent = loggedInUser.balance.toFixed(2);
-                        document.getElementById('user-balance').className = loggedInUser.balance < (loggedInUser.type === 'vaste' ? VASTE_ACCOUNT_LIMIT : GAST_ACCOUNT_LIMIT) ? 'balance-text-red' : loggedInUser.balance < 5 ? 'balance-text-orange' : 'text-indigo-600';
-                        showMessage(`Aankoop van €${totalCost.toFixed(2)} succesvol! Uw nieuwe saldo is €${loggedInUser.balance.toFixed(2)}.`);
-                        
-                        // Reset de hoeveelheden op de UI
-                        document.querySelectorAll('.quantity-input').forEach(input => input.value = 0);
-                        quantities = products.reduce((acc, product) => {
-                            acc[product.id] = 0;
-                            return acc;
-                        }, {});
-                        updateTotals();
-                    } else {
-                        showMessage(`Onvoldoende saldo. Totale kosten: €${totalCost.toFixed(2)}, uw saldo: €${loggedInUser.balance.toFixed(2)}. Het minimaal toegestane saldo is €${creditLimit.toFixed(2)}.`, true);
-                    }
-                });
-
-                document.getElementById('logout-button').addEventListener('click', handleLogout);
-                updateTotals(); // Initieel de totalen updaten
-            };
-
-            const showEditModal = ({ title, fields, onSave }) => {
-                const modalContainer = document.getElementById('modal-container');
-                const modalTitle = document.getElementById('modal-title');
-                const modalBody = document.getElementById('modal-body');
-
-                modalTitle.textContent = title;
-                modalBody.innerHTML = `
-                    <form id="edit-form" class="space-y-4">
-                        ${fields.map(field => `
-                            <div>
-                                <label for="${field.id}" class="block text-sm font-medium text-gray-700">${field.label}</label>
-                                ${field.type === 'select' ? `
-                                    <select id="${field.id}" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-                                        ${field.options.map(option => `<option value="${option}" ${option === field.value ? 'selected' : ''}>${option}</option>`).join('')}
-                                    </select>
-                                ` : `
-                                    <input
-                                        type="${field.type}"
-                                        id="${field.id}"
-                                        value="${field.value}"
-                                        ${field.maxlength ? `maxlength="${field.maxlength}"` : ''}
-                                        ${field.step ? `step="${field.step}"` : ''}
-                                        class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                                    />
-                                `}
-                            </div>
-                        `).join('')}
-                        <div class="flex justify-end gap-4 mt-6">
-                            <button type="button" id="modal-cancel-button" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">Annuleren</button>
-                            <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Opslaan</button>
-                        </div>
-                    </form>
-                `;
-                
-                const form = document.getElementById('edit-form');
-                form.addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    const formData = Object.fromEntries(new FormData(e.target).entries());
-                    onSave(formData);
-                    hideEditModal();
-                });
-                document.getElementById('modal-cancel-button').addEventListener('click', hideEditModal);
-                modalContainer.classList.remove('hidden');
-                modalContainer.classList.add('flex');
-            };
-
-            const hideEditModal = () => {
-                const modalContainer = document.getElementById('modal-container');
-                modalContainer.classList.add('hidden');
-                modalContainer.classList.remove('flex');
-            };
-
-            const showConfirmModal = (title, message, onConfirm) => {
-                const confirmModalContainer = document.getElementById('confirm-modal-container');
-                document.getElementById('confirm-title').textContent = title;
-                document.getElementById('confirm-message').textContent = message;
-
-                const confirmOkButton = document.getElementById('confirm-ok');
-                const confirmCancelButton = document.getElementById('confirm-cancel');
-                
-                confirmOkButton.onclick = () => {
-                    onConfirm();
-                    hideConfirmModal();
-                };
-                confirmCancelButton.onclick = hideConfirmModal;
-                
-                confirmModalContainer.classList.remove('hidden');
-                confirmModalContainer.classList.add('flex');
-            };
-
-            const hideConfirmModal = () => {
-                const confirmModalContainer = document.getElementById('confirm-modal-container');
-                confirmModalContainer.classList.add('hidden');
-                confirmModalContainer.classList.remove('flex');
-            };
-
-            renderHomeView(); // Start met het inlogscherm
+    // Product edit/delete (event delegation)
+    document.getElementById('admin-products').addEventListener('click', (e) => {
+      const editBtn = e.target.closest('.btn-edit-product');
+      const delBtn  = e.target.closest('.btn-del-product');
+      if (editBtn) {
+        const id = parseInt(editBtn.dataset.id);
+        const p = products.find(x => x.id === id);
+        showEditModal({
+          title: `Bewerk product: ${p.name}`,
+          fields: [
+            { id:'name', label:'Naam',  type:'text',   value:p.name },
+            { id:'price',label:'Prijs', type:'number', value:p.price, step:'0.01' },
+            { id:'stock',label:'Voorraad', type:'number', value:p.stock }
+          ],
+          onSave: (fd) => {
+            const name = (fd.name||'').trim();
+            const price = parseFloat(fd.price);
+            const stock = parseInt(fd.stock,10);
+            if (!name || isNaN(price) || price<=0 || isNaN(stock) || stock<0) return toast('Ongeldige invoer.', 'error');
+            Object.assign(p, { name, price, stock });
+            save(LS_KEYS.products, products);
+            viewAdmin();
+            toast('Product bijgewerkt.', 'ok');
+          }
         });
-    </script>
+      }
+      if (delBtn) {
+        const id = parseInt(delBtn.dataset.id);
+        const p = products.find(x => x.id === id);
+        showConfirm(`Verwijderen`, `Product ‘${p.name}’ verwijderen?`, () => {
+          products = products.filter(x => x.id !== id);
+          save(LS_KEYS.products, products);
+          viewAdmin();
+          toast('Product verwijderd.', 'ok');
+        });
+      }
+    });
+
+    // Account toevoegen
+    document.getElementById('form-add-acc').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = document.getElementById('acc-name').value.trim();
+      const type = document.getElementById('acc-type').value;
+      const pin  = document.getElementById('acc-pin').value.trim();
+      if (!name || !pin || pin.length !== 4 || /\D/.test(pin)) return toast('Naam en 4-cijferige PIN vereist.', 'error');
+      if (accounts.some(a => a.pin === pin)) return toast('PIN al in gebruik.', 'error');
+      const nextId = accounts.length ? Math.max(...accounts.map(a => a.id)) + 1 : 1;
+      accounts.push({ id: nextId, name, pin, balance: 0, type });
+      save(LS_KEYS.accounts, accounts);
+      viewAdmin();
+      toast(`Account ‘${name}’ aangemaakt.`, 'ok');
+    });
+
+    // Account bewerken
+    document.getElementById('admin-accounts').addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-edit-account');
+      if (!btn) return;
+      const id = parseInt(btn.dataset.id);
+      const acc = accounts.find(a => a.id === id);
+      showEditModal({
+        title: `Bewerk account: ${acc.name}`,
+        fields: [
+          { id:'name', label:'Naam', type:'text', value: acc.name },
+          { id:'pin',  label:'PIN (4 cijfers)', type:'password', value: acc.pin, maxlength:'4' },
+          { id:'type', label:'Type', type:'select', value: acc.type, options:['vaste','gast'] }
+        ],
+        onSave: (fd) => {
+          const name = (fd.name||'').trim();
+          const pin  = (fd.pin||'').trim();
+          const type = fd.type;
+          if (!name || !pin || pin.length!==4 || /\D/.test(pin)) return toast('Ongeldige invoer.', 'error');
+          if (accounts.some(a => a.pin===pin && a.id!==id)) return toast('PIN al in gebruik.', 'error');
+          Object.assign(acc, { name, pin, type });
+          save(LS_KEYS.accounts, accounts);
+          viewAdmin();
+          toast('Account bijgewerkt.', 'ok');
+        }
+      });
+    });
+
+    // Export / Import / Reset
+    document.getElementById('btn-export').addEventListener('click', () => {
+      const data = { accounts, products, transactions };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `wallet-backup-${new Date().toISOString().slice(0,10)}.json`;
+      a.click(); URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('input-import').addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        if (!data.accounts || !data.products || !data.transactions) throw new Error('Ongeldig bestand');
+        accounts = data.accounts; products = data.products; transactions = data.transactions;
+        save(LS_KEYS.accounts, accounts); save(LS_KEYS.products, products); save(LS_KEYS.tx, transactions);
+        viewAdmin();
+        toast('Backup geïmporteerd.', 'ok');
+      } catch (err) { toast('Import mislukt: ongeldige JSON.', 'error'); }
+      finally { e.target.value = ''; }
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      showConfirm('Alles resetten', 'Alle data (accounts, producten, transacties) wissen? Dit kan niet ongedaan worden gemaakt.', () => {
+        localStorage.removeItem(LS_KEYS.accounts);
+        localStorage.removeItem(LS_KEYS.products);
+        localStorage.removeItem(LS_KEYS.tx);
+        accounts = []; products = []; transactions = [];
+        // Admin opnieuw aanmaken
+        accounts.push({ id: 1, name: 'Beheerder', pin: ADMIN_PIN, balance: 100.00, type: 'vaste' });
+        save(LS_KEYS.accounts, accounts);
+        viewAdmin();
+        toast('Alles gereset.', 'ok');
+      });
+    });
+  };
+
+  const viewUser = () => {
+    // Init qty map
+    qty = Object.fromEntries(products.map(p => [p.id, 0]));
+
+    const total = () => {
+      return Object.entries(qty).reduce((sum, [pid, q]) => {
+        const p = products.find(x => x.id === +pid); return sum + (p ? p.price * q : 0);
+      }, 0);
+    };
+
+    const render = () => {
+      app.innerHTML = `
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h1 class="text-3xl font-extrabold text-gray-900">Winkel</h1>
+            <p class="text-gray-600">Welkom, ${loggedIn.name}</p>
+          </div>
+          <button id="back" class="px-3 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-900 font-semibold">Terug</button>
+        </div>
+
+        <div class="text-xl font-bold mb-4 text-indigo-700">Saldo: €<span id="bal">${fmt(loggedIn.balance)}</span></div>
+
+        <div id="plist" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          ${products.map(p => `
+            <div class="bg-gray-50 border rounded-xl p-4 flex items-center justify-between gap-3">
+              <div>
+                <div class="font-semibold text-gray-900">${p.name}</div>
+                <div class="text-gray-600 text-sm">€${fmt(p.price)}</div>
+                <div class="text-gray-500 text-xs">Op voorraad: ${p.stock}</div>
+              </div>
+              <input data-id="${p.id}" type="number" min="0" max="${p.stock}" value="${qty[p.id]||0}"
+                     class="qty w-20 p-2 text-center rounded-lg border" />
+            </div>
+          `).join('')}
+        </div>
+
+        <div class="text-lg font-bold mb-4">Totaal: €<span id="tot">${fmt(total())}</span></div>
+        <button id="buy" class="w-full px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">Aankopen</button>
+      `;
+
+      // Wire up events
+      document.getElementById('back').addEventListener('click', viewHome);
+      document.querySelectorAll('.qty').forEach(inp => {
+        inp.addEventListener('input', (e) => {
+          const id = parseInt(e.currentTarget.dataset.id);
+          let v = parseInt(e.currentTarget.value, 10);
+          if (isNaN(v) || v < 0) v = 0;
+          const p = products.find(x => x.id === id);
+          if (v > p.stock) v = p.stock; // cap aan voorraad
+          qty[id] = v;
+          e.currentTarget.value = v;
+          document.getElementById('tot').textContent = fmt(total());
+        });
+      });
+      document.getElementById('buy').addEventListener('click', handleBuy);
+
+      // saldo badge kleur
+      const bal = document.getElementById('bal');
+      const cls = balanceBadgeClass(loggedIn.balance, loggedIn.type);
+      bal.parentElement.classList.add(...cls.split(' '), 'inline-flex', 'px-2', 'py-1', 'rounded');
+    };
+
+    const handleBuy = () => {
+      const amount = +total().toFixed(2);
+      if (amount <= 0) return toast('Geen items geselecteerd.', 'error');
+
+      // Check per product voorraad
+      for (const [pid, q] of Object.entries(qty)) {
+        const p = products.find(x => x.id === +pid);
+        if (!p) continue;
+        if (q > p.stock) return toast(`Onvoldoende voorraad voor ${p.name}.`, 'error');
+      }
+
+      const limit = loggedIn.type === 'vaste' ? VASTE_ACCOUNT_LIMIT : GAST_ACCOUNT_LIMIT;
+      const newBal = +(loggedIn.balance - amount).toFixed(2);
+      if (newBal < limit) return toast(`Onvoldoende saldo. Minimaal toegestaan: €${fmt(limit)}.`, 'error');
+
+      // Pas voorraad aan
+      for (const [pid, q] of Object.entries(qty)) {
+        if (q <= 0) continue;
+        const p = products.find(x => x.id === +pid);
+        p.stock -= q;
+      }
+      save(LS_KEYS.products, products);
+
+      // Update account saldo
+      const acc = accounts.find(a => a.id === loggedIn.id);
+      acc.balance = newBal; loggedIn.balance = newBal;
+      save(LS_KEYS.accounts, accounts);
+
+      // Log transactie
+      const items = Object.entries(qty)
+        .filter(([,q]) => q>0)
+        .map(([pid,q]) => {
+          const p = products.find(x => x.id === +pid); return `${p.name} (${q}x)`;
+        }).join(', ');
+      const nextId = transactions.length ? Math.max(...transactions.map(t => t.id)) + 1 : 1;
+      transactions.push({ id: nextId, user: acc.name, amount, items, date: new Date().toISOString() });
+      save(LS_KEYS.tx, transactions);
+
+      // Reset qty inputs
+      qty = Object.fromEntries(products.map(p => [p.id, 0]));
+      render();
+      toast(`Aankoop van €${fmt(amount)} succesvol!`, 'ok');
+    };
+
+    render();
+  };
+
+  // ====== Modals ======
+  const showEditModal = ({ title, fields, onSave }) => {
+    const overlay = document.getElementById('modal-overlay');
+    const body = document.getElementById('modal-body');
+    document.getElementById('modal-title').textContent = title;
+    body.innerHTML = `
+      <form id="edit-form" class="space-y-4">
+        ${fields.map(f => `
+          <div>
+            <label for="${f.id}" class="block text-sm font-medium text-gray-700">${f.label}</label>
+            ${f.type === 'select' ? `
+              <select id="${f.id}" class="mt-1 w-full p-2 rounded-lg border">
+                ${f.options.map(o => `<option value="${o}" ${o===f.value?'selected':''}>${o}</option>`).join('')}
+              </select>
+            ` : `
+              <input id="${f.id}" type="${f.type}" value="${f.value}"
+                     ${f.maxlength?`maxlength="${f.maxlength}"`:''} ${f.step?`step="${f.step}"`:''}
+                     class="mt-1 w-full p-2 rounded-lg border" />
+            `}
+          </div>
+        `).join('')}
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" id="edit-cancel" class="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 font-medium">Annuleren</button>
+          <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold">Opslaan</button>
+        </div>
+      </form>
+    `;
+    overlay.classList.remove('hidden'); overlay.classList.add('flex');
+    document.getElementById('edit-cancel').onclick = hideEditModal;
+    document.getElementById('edit-form').onsubmit = (e) => {
+      e.preventDefault();
+      const fd = Object.fromEntries(new FormData(e.target).entries());
+      onSave(fd); hideEditModal();
+    };
+  };
+  const hideEditModal = () => {
+    const overlay = document.getElementById('modal-overlay');
+    overlay.classList.add('hidden'); overlay.classList.remove('flex');
+  };
+
+  const showConfirm = (title, msg, onOk) => {
+    const ov = document.getElementById('confirm-overlay');
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-msg').textContent = msg;
+    ov.classList.remove('hidden'); ov.classList.add('flex');
+    const ok = document.getElementById('confirm-ok');
+    const cancel = document.getElementById('confirm-cancel');
+    ok.onclick = () => { onOk(); hideConfirm(); };
+    cancel.onclick = hideConfirm;
+  };
+  const hideConfirm = () => {
+    const ov = document.getElementById('confirm-overlay');
+    ov.classList.add('hidden'); ov.classList.remove('flex');
+  };
+
+  // Start app
+  viewHome();
+  </script>
 </body>
 </html>

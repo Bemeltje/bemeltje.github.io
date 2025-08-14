@@ -6,8 +6,8 @@
 <title>Fictief Geld Systeem</title>
 <style>
     body {
-        font-family: Arial, sans-serif;
-        background: linear-gradient(135deg, #f0f4f8, #d9e2ec);
+        font-family: 'Segoe UI', Arial, sans-serif;
+        background: linear-gradient(135deg, #eef2f3, #dfe9f3);
         margin: 0;
         padding: 0;
         color: #333;
@@ -17,26 +17,27 @@
         color: white;
         padding: 15px;
         text-align: center;
-        font-size: 1.4em;
+        font-size: 1.5em;
         box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        letter-spacing: 1px;
     }
     .container {
-        max-width: 500px;
+        max-width: 550px;
         margin: 20px auto;
         background: white;
         padding: 20px;
         border-radius: 10px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
     }
-    h2 { margin-top: 0; }
+    h2, h3 { margin-top: 0; }
     button {
         padding: 10px 15px;
         border: none;
         background: #4a90e2;
         color: white;
-        border-radius: 5px;
+        border-radius: 6px;
         cursor: pointer;
-        margin: 5px 0;
+        margin: 3px;
         font-size: 1em;
         transition: background 0.3s;
     }
@@ -60,15 +61,34 @@
         align-items: center;
     }
     .item:last-child { border-bottom: none; }
+    .badge {
+        background: #4a90e2;
+        color: white;
+        padding: 2px 6px;
+        font-size: 0.8em;
+        border-radius: 4px;
+        margin-left: 5px;
+    }
+    .badge.gast { background: #f39c12; }
+    .badge.vast { background: #27ae60; }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9em;
+        margin-top: 10px;
+    }
+    th, td {
+        border: 1px solid #ddd;
+        padding: 6px;
+        text-align: left;
+    }
+    th { background: #f4f4f4; }
 </style>
 </head>
 <body>
 
-<header>
-    💰 Fictief Geld Systeem
-</header>
+<header>💰 Fictief Geld Systeem</header>
 
-<!-- Hoofdpagina met accounts -->
 <div class="container" id="homeScreen">
     <h2>Kies je account</h2>
     <div id="accountButtons"></div>
@@ -77,7 +97,6 @@
     <button onclick="adminLogin()">Admin inloggen</button>
 </div>
 
-<!-- Inlogscherm voor pincode -->
 <div class="container hidden" id="pinScreen">
     <h2>Inloggen</h2>
     <p id="selectedUserName"></p>
@@ -86,7 +105,6 @@
     <button class="red" onclick="goHome()">Annuleren</button>
 </div>
 
-<!-- Gebruiker omgeving -->
 <div class="container hidden" id="userScreen">
     <h2 id="welcome"></h2>
     <p>Saldo: €<span id="saldo"></span></p>
@@ -95,7 +113,6 @@
     <button class="red" onclick="logout()">Uitloggen</button>
 </div>
 
-<!-- Admin omgeving -->
 <div class="container hidden" id="adminScreen">
     <h2>Admin Paneel</h2>
     <h3>Accounts</h3>
@@ -108,11 +125,17 @@
     </select>
     <button onclick="addAccount()">Account toevoegen</button>
     <div id="accountList"></div>
+
     <h3>Producten</h3>
     <input id="prodName" placeholder="Productnaam">
     <input type="number" step="0.01" id="prodPrice" placeholder="Prijs">
     <button onclick="addProduct()">Product toevoegen</button>
     <div id="productAdminList"></div>
+
+    <h3>Logboek</h3>
+    <div id="logList"></div>
+    <button onclick="clearLogs()" class="red">Logboek wissen</button>
+
     <hr>
     <button class="red" onclick="logout()">Uitloggen</button>
 </div>
@@ -128,11 +151,13 @@ let products = JSON.parse(localStorage.getItem("products")) || [
     {name: "Bier", price: 0.75},
     {name: "Cola", price: 1.00}
 ];
+let logs = JSON.parse(localStorage.getItem("logs")) || [];
 let currentUserIndex = null;
 
 function saveData() {
     localStorage.setItem("accounts", JSON.stringify(accounts));
     localStorage.setItem("products", JSON.stringify(products));
+    localStorage.setItem("logs", JSON.stringify(logs));
 }
 
 function loadAccountButtons() {
@@ -141,10 +166,12 @@ function loadAccountButtons() {
     accounts.forEach((acc, i) => {
         let btn = document.createElement("button");
         btn.style.width = "100%";
-        btn.textContent = `${acc.name} (€${acc.saldo.toFixed(2)}) [${acc.type}]`;
-        if (acc.saldo < 0) {
-            btn.style.background = "#e94e4e";
-        }
+        btn.textContent = `${acc.name} (€${acc.saldo.toFixed(2)})`;
+        let badge = document.createElement("span");
+        badge.classList.add("badge", acc.type);
+        badge.textContent = acc.type;
+        btn.appendChild(badge);
+        if (acc.saldo < 0) btn.style.background = "#e94e4e";
         btn.onclick = () => selectAccount(i);
         container.appendChild(btn);
     });
@@ -188,22 +215,21 @@ function updateUserScreen() {
 function buyProduct(i) {
     let acc = accounts[currentUserIndex];
     let prijs = products[i].price;
-
     if (!confirm(`Weet je zeker dat je '${products[i].name}' wilt kopen voor €${prijs.toFixed(2)}?`)) return;
 
-    if (acc.type === "gast" && acc.saldo - prijs < 0) {
-        alert("Gast mag niet onder €0 komen!");
-        return;
-    }
-    if (acc.type === "vast" && acc.saldo - prijs < -10) {
-        alert("Vast mag niet verder dan -€10 komen!");
-        return;
-    }
+    if (acc.type === "gast" && acc.saldo - prijs < 0) return alert("Gast mag niet onder €0 komen!");
+    if (acc.type === "vast" && acc.saldo - prijs < -10) return alert("Vast mag niet verder dan -€10 komen!");
 
     acc.saldo -= prijs;
+    logs.push({
+        gebruiker: acc.name,
+        product: products[i].name,
+        prijs: prijs,
+        tijd: new Date().toLocaleString()
+    });
     saveData();
     updateUserScreen();
-    loadAccountButtons(); 
+    loadAccountButtons();
 }
 
 function adminLogin() {
@@ -213,9 +239,7 @@ function adminLogin() {
         document.getElementById("homeScreen").classList.add("hidden");
         document.getElementById("adminScreen").classList.remove("hidden");
         updateAdminScreen();
-    } else {
-        alert("Verkeerde admin pincode!");
-    }
+    } else alert("Verkeerde admin pincode!");
 }
 
 function updateAdminScreen() {
@@ -224,9 +248,9 @@ function updateAdminScreen() {
     accounts.forEach((acc, i) => {
         let div = document.createElement("div");
         div.classList.add("item");
-        div.innerHTML = `<span>${acc.name} (€${acc.saldo.toFixed(2)}) [${acc.type}]</span> 
+        div.innerHTML = `<span>${acc.name} (€${acc.saldo.toFixed(2)}) [${acc.type}]</span>
             <span>
-                <button onclick="deleteAccount(${i})">X</button> 
+                <button onclick="deleteAccount(${i})">X</button>
                 <button onclick="addSaldo(${i})">+€</button>
             </span>`;
         accList.appendChild(div);
@@ -237,10 +261,17 @@ function updateAdminScreen() {
     products.forEach((p, i) => {
         let div = document.createElement("div");
         div.classList.add("item");
-        div.innerHTML = `<span>${p.name} (€${p.price.toFixed(2)})</span> 
+        div.innerHTML = `<span>${p.name} (€${p.price.toFixed(2)})</span>
             <button onclick="deleteProduct(${i})">X</button>`;
         prodList.appendChild(div);
     });
+
+    let logTable = `<table><tr><th>Gebruiker</th><th>Product</th><th>Prijs</th><th>Tijd</th></tr>`;
+    logs.forEach(log => {
+        logTable += `<tr><td>${log.gebruiker}</td><td>${log.product}</td><td>€${log.prijs.toFixed(2)}</td><td>${log.tijd}</td></tr>`;
+    });
+    logTable += "</table>";
+    document.getElementById("logList").innerHTML = logTable;
 }
 
 function addAccount() {
@@ -248,8 +279,8 @@ function addAccount() {
     let pin = document.getElementById("newPin").value;
     let saldo = parseFloat(document.getElementById("newSaldo").value);
     let type = document.getElementById("newType").value;
-    if (!name || !pin || isNaN(saldo)) { alert("Vul alle velden in!"); return; }
-    if (pin.length > 4) { alert("Pincode mag maximaal 4 cijfers zijn!"); return; }
+    if (!name || !pin || isNaN(saldo)) return alert("Vul alle velden in!");
+    if (pin.length > 4) return alert("Pincode mag maximaal 4 cijfers zijn!");
     accounts.push({name, pin, saldo, type});
     saveData();
     loadAccountButtons();
@@ -276,7 +307,7 @@ function addSaldo(i) {
 function addProduct() {
     let name = document.getElementById("prodName").value;
     let price = parseFloat(document.getElementById("prodPrice").value);
-    if (!name || isNaN(price)) { alert("Vul alle velden in!"); return; }
+    if (!name || isNaN(price)) return alert("Vul alle velden in!");
     products.push({name, price});
     saveData();
     updateAdminScreen();
@@ -286,6 +317,14 @@ function deleteProduct(i) {
     products.splice(i, 1);
     saveData();
     updateAdminScreen();
+}
+
+function clearLogs() {
+    if (confirm("Weet je zeker dat je het logboek wilt wissen?")) {
+        logs = [];
+        saveData();
+        updateAdminScreen();
+    }
 }
 
 function logout() {
@@ -302,6 +341,5 @@ function goHome() {
     document.getElementById("homeScreen").classList.remove("hidden");
 }
 </script>
-
 </body>
 </html>

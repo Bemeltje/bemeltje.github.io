@@ -98,12 +98,14 @@
             ];
             let transactions = JSON.parse(localStorage.getItem('fictional-transactions')) || [];
             
-            // Voeg een standaard hoofd-adminaccount toe als het er nog niet is
-            if (!accounts.find(acc => acc.role === 'hoofd-admin')) {
+            // Zoek naar een bestaand hoofd-adminaccount
+            let headAdminAccount = accounts.find(acc => acc.role === 'hoofd-admin');
+            if (headAdminAccount) {
+                 ADMIN_PIN = headAdminAccount.pin;
+            } else {
+                 // Voeg een standaard hoofd-adminaccount toe als het er nog niet is
                 accounts.push({ id: accounts.length > 0 ? Math.max(...accounts.map(acc => acc.id)) + 1 : 1, name: 'Sjoerd (Hoofd Admin)', pin: ADMIN_PIN, balance: 100.00, type: 'vaste', role: 'hoofd-admin' });
                 saveAccounts();
-            } else {
-                 ADMIN_PIN = accounts.find(acc => acc.role === 'hoofd-admin').pin;
             }
 
             let loggedInUser = null;
@@ -319,8 +321,7 @@
                                     />
                                     <button
                                         type="submit"
-                                        class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold p-2 rounded-lg transition-colors"
-                                    >
+                                        class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold p-2 rounded-lg transition-colors">
                                         Nieuw account aanmaken
                                     </button>
                                 </form>

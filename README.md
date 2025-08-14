@@ -5,84 +5,117 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fictief Geld Systeem</title>
 <style>
-    body {
-        font-family: 'Segoe UI', Arial, sans-serif;
-        background: linear-gradient(135deg, #eef2f3, #dfe9f3);
-        margin: 0;
-        padding: 0;
-        color: #333;
-    }
-    header {
-        background: #4a90e2;
-        color: white;
-        padding: 15px;
-        text-align: center;
-        font-size: 1.5em;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-        letter-spacing: 1px;
-    }
-    .container {
-        max-width: 550px;
-        margin: 20px auto;
-        background: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    }
-    h2, h3 { margin-top: 0; }
-    button {
-        padding: 10px 15px;
-        border: none;
-        background: #4a90e2;
-        color: white;
-        border-radius: 6px;
-        cursor: pointer;
-        margin: 3px;
-        font-size: 1em;
-        transition: background 0.3s;
-    }
-    button:hover { background: #3b7dc4; }
-    button.red { background: #e94e4e; }
-    button.red:hover { background: #c43d3d; }
-    input, select {
-        padding: 10px;
-        margin: 5px 0;
-        width: 100%;
-        border: 1px solid #ccc;
-        border-radius: 5px;
-        font-size: 1em;
-    }
-    .hidden { display: none; }
-    .item {
-        border-bottom: 1px solid #eee;
-        padding: 8px 0;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    .item:last-child { border-bottom: none; }
-    .badge {
-        background: #4a90e2;
-        color: white;
-        padding: 2px 6px;
-        font-size: 0.8em;
-        border-radius: 4px;
-        margin-left: 5px;
-    }
-    .badge.gast { background: #f39c12; }
-    .badge.vast { background: #27ae60; }
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.9em;
-        margin-top: 10px;
-    }
-    th, td {
-        border: 1px solid #ddd;
-        padding: 6px;
-        text-align: left;
-    }
-    th { background: #f4f4f4; }
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: linear-gradient(135deg, #f7f9fb, #e4ebf1);
+    margin: 0;
+    padding: 0;
+    color: #333;
+}
+
+header {
+    background: #2b7cd3;
+    color: white;
+    padding: 15px;
+    text-align: center;
+    font-size: 1.6em;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    letter-spacing: 1px;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 20px auto;
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+h2, h3 { margin-top: 0; }
+
+button {
+    padding: 8px 14px;
+    border: none;
+    background: #2b7cd3;
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    margin: 3px;
+    font-size: 0.95em;
+    transition: background 0.3s, transform 0.1s;
+}
+button:hover { background: #1f65ac; transform: scale(1.03); }
+button.red { background: #d64545; }
+button.red:hover { background: #b53333; }
+
+input, select {
+    padding: 9px;
+    margin: 5px 0;
+    width: 100%;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 0.95em;
+}
+
+.hidden { display: none; }
+
+.item {
+    border-bottom: 1px solid #eee;
+    padding: 8px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.item:last-child { border-bottom: none; }
+
+.badge {
+    background: #4a90e2;
+    color: white;
+    padding: 2px 6px;
+    font-size: 0.8em;
+    border-radius: 4px;
+    margin-left: 5px;
+}
+.badge.gast { background: #f39c12; }
+.badge.vast { background: #27ae60; }
+
+/* Account grid */
+#accountButtons {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 12px;
+}
+.account-card {
+    background: white;
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    border-left: 5px solid transparent;
+    transition: transform 0.1s;
+}
+.account-card:hover { transform: translateY(-2px); }
+.account-card.red { border-left-color: #d64545; }
+.account-card.green { border-left-color: #27ae60; }
+.account-card.orange { border-left-color: #f39c12; }
+.account-card strong { font-size: 1.1em; }
+
+/* Tabellen netjes */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+    margin-top: 10px;
+}
+th, td {
+    border: 1px solid #ddd;
+    padding: 6px;
+    text-align: left;
+}
+th { background: #f4f4f4; }
 </style>
 </head>
 <body>
@@ -153,6 +186,7 @@ let products = JSON.parse(localStorage.getItem("products")) || [
 ];
 let logs = JSON.parse(localStorage.getItem("logs")) || [];
 let currentUserIndex = null;
+let cart = {};
 
 function saveData() {
     localStorage.setItem("accounts", JSON.stringify(accounts));
@@ -164,16 +198,19 @@ function loadAccountButtons() {
     let container = document.getElementById("accountButtons");
     container.innerHTML = "";
     accounts.forEach((acc, i) => {
-        let btn = document.createElement("button");
-        btn.style.width = "100%";
-        btn.textContent = `${acc.name} (€${acc.saldo.toFixed(2)})`;
-        let badge = document.createElement("span");
-        badge.classList.add("badge", acc.type);
-        badge.textContent = acc.type;
-        btn.appendChild(badge);
-        if (acc.saldo < 0) btn.style.background = "#e94e4e";
-        btn.onclick = () => selectAccount(i);
-        container.appendChild(btn);
+        let card = document.createElement("div");
+        card.classList.add("account-card");
+        if (acc.saldo >= 0) card.classList.add("green");
+        else if (acc.type === "vast" && acc.saldo >= -5) card.classList.add("orange");
+        else card.classList.add("red");
+
+        card.innerHTML = `
+            <strong>${acc.name}</strong>
+            <span>Saldo: €${acc.saldo.toFixed(2)}</span>
+            <span class="badge ${acc.type}">${acc.type}</span>
+        `;
+        card.onclick = () => selectAccount(i);
+        container.appendChild(card);
     });
 }
 loadAccountButtons();
@@ -201,32 +238,64 @@ function checkLogin() {
 
 function updateUserScreen() {
     let acc = accounts[currentUserIndex];
-    document.getElementById("saldo").textContent = acc.saldo.toFixed(2);
+    let saldoElement = document.getElementById("saldo");
+    saldoElement.textContent = acc.saldo.toFixed(2);
+    if (acc.saldo >= 0) saldoElement.style.color = "green";
+    else if (acc.type === "vast" && acc.saldo >= -5) saldoElement.style.color = "orange";
+    else saldoElement.style.color = "red";
+
+    if (acc.type === "gast" && acc.saldo < 1) alert("Let op! Je saldo is bijna op.");
+    if (acc.type === "vast" && acc.saldo < -8) alert("Let op! Je zit bijna aan je limiet van -€10.");
+
     let list = document.getElementById("productList");
     list.innerHTML = "";
+    cart = {};
+
     products.forEach((p, i) => {
+        cart[i] = 0;
         let div = document.createElement("div");
         div.classList.add("item");
-        div.innerHTML = `<span>${p.name} - €${p.price.toFixed(2)}</span> <button onclick="buyProduct(${i})">Koop</button>`;
+        div.innerHTML = `
+            <span>${p.name} - €${p.price.toFixed(2)}</span> 
+            <input type="number" min="0" value="0" style="width:60px;" onchange="cart[${i}] = parseInt(this.value) || 0">
+        `;
         list.appendChild(div);
     });
+
+    let checkoutBtn = document.createElement("button");
+    checkoutBtn.textContent = "🛒 Afrekenen";
+    checkoutBtn.onclick = checkoutCart;
+    list.appendChild(checkoutBtn);
 }
 
-function buyProduct(i) {
+function checkoutCart() {
     let acc = accounts[currentUserIndex];
-    let prijs = products[i].price;
-    if (!confirm(`Weet je zeker dat je '${products[i].name}' wilt kopen voor €${prijs.toFixed(2)}?`)) return;
+    let totaal = 0;
+    let aankoopDetails = [];
 
-    if (acc.type === "gast" && acc.saldo - prijs < 0) return alert("Gast mag niet onder €0 komen!");
-    if (acc.type === "vast" && acc.saldo - prijs < -10) return alert("Vast mag niet verder dan -€10 komen!");
-
-    acc.saldo -= prijs;
-    logs.push({
-        gebruiker: acc.name,
-        product: products[i].name,
-        prijs: prijs,
-        tijd: new Date().toLocaleString()
+    Object.keys(cart).forEach(i => {
+        if (cart[i] > 0) {
+            let prijs = products[i].price * cart[i];
+            totaal += prijs;
+            aankoopDetails.push({product: products[i].name, aantal: cart[i], prijs: products[i].price});
+        }
     });
+
+    if (aankoopDetails.length === 0) return alert("Je hebt niets geselecteerd.");
+    if (!confirm(`Je wilt ${aankoopDetails.length} producten kopen voor totaal €${totaal.toFixed(2)}. Doorgaan?`)) return;
+    if (acc.type === "gast" && acc.saldo - totaal < 0) return alert("Gast mag niet onder €0 komen!");
+    if (acc.type === "vast" && acc.saldo - totaal < -10) return alert("Vast mag niet verder dan -€10 komen!");
+
+    acc.saldo -= totaal;
+    aankoopDetails.forEach(item => {
+        logs.push({
+            gebruiker: acc.name,
+            product: `${item.product} (x${item.aantal})`,
+            prijs: item.prijs * item.aantal,
+            tijd: new Date().toLocaleString()
+        });
+    });
+
     saveData();
     updateUserScreen();
     loadAccountButtons();
@@ -268,10 +337,30 @@ function updateAdminScreen() {
 
     let logTable = `<table><tr><th>Gebruiker</th><th>Product</th><th>Prijs</th><th>Tijd</th></tr>`;
     logs.forEach(log => {
-        logTable += `<tr><td>${log.gebruiker}</td><td>${log.product}</td><td>€${log.prijs.toFixed(2)}</td><td>${log.tijd}</td></tr>`;
+        logTable += `<tr>
+                        <td>${log.gebruiker}</td>
+                        <td>${log.product}</td>
+                        <td>€${log.prijs.toFixed(2)}</td>
+                        <td>${log.tijd}</td>
+                     </tr>`;
     });
     logTable += "</table>";
-    document.getElementById("logList").innerHTML = logTable;
+    document.getElementById("logList").innerHTML = logTable + 
+        `<br><button onclick="exportLogsToCSV()">📥 Exporteer naar CSV</button>`;
+}
+
+function exportLogsToCSV() {
+    if (logs.length === 0) return alert("Het logboek is leeg.");
+    let csvContent = "data:text/csv;charset=utf-8,"
+        + ["Gebruiker,Product,Prijs,Tijd"].join(",") + "\n"
+        + logs.map(l => `${l.gebruiker},${l.product},${l.prijs.toFixed(2)},${l.tijd}`).join("\n");
+    let encodedUri = encodeURI(csvContent);
+    let link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "logboek.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
 function addAccount() {

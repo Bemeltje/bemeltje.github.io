@@ -1,4 +1,3 @@
-<!DOCTYPE html>
 <html lang="nl">
 <head>
 <meta charset="UTF-8">
@@ -13,7 +12,8 @@
     .hidden { display: none; }
     .container { padding: 15px; }
     .item { border: 1px solid #ccc; border-radius: 8px; padding: 10px; margin: 10px 0; }
-    .admin { background-color: #f8f8f8; padding: 10px; border-radius: 5px; }
+    .account-list { display: flex; flex-wrap: wrap; gap: 10px; }
+    .account-item { background: #eee; padding: 10px; border-radius: 5px; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -21,12 +21,19 @@
     <h1>Fictief Wallet Systeem</h1>
 </header>
 <div class="container">
-    <div id="loginSection">
+    <div id="homeSection">
+        <h2>Selecteer een account</h2>
+        <div id="accountList" class="account-list"></div>
+        <button onclick="showLogin('admin')">Admin</button>
+    </div>
+
+    <div id="loginSection" class="hidden">
         <h2>Inloggen</h2>
         <input type="text" id="loginName" placeholder="Naam">
         <input type="password" id="loginPin" placeholder="Pincode">
         <button onclick="login()">Inloggen</button>
     </div>
+
     <div id="dashboard" class="hidden">
         <h2 id="welcomeMsg"></h2>
         <div id="balanceSection"></div>
@@ -38,6 +45,7 @@
 let users = [];
 let products = [];
 let currentUser = null;
+let loginMode = 'user';
 
 function saveData() {
     localStorage.setItem('users', JSON.stringify(users));
@@ -47,6 +55,26 @@ function saveData() {
 function loadData() {
     users = JSON.parse(localStorage.getItem('users')) || [];
     products = JSON.parse(localStorage.getItem('products')) || [];
+    renderAccountList();
+}
+
+function renderAccountList() {
+    const list = document.getElementById('accountList');
+    list.innerHTML = '';
+    users.forEach(user => {
+        const div = document.createElement('div');
+        div.className = 'account-item';
+        div.innerText = user.name;
+        div.onclick = () => showLogin('user', user.name);
+        list.appendChild(div);
+    });
+}
+
+function showLogin(mode, prefillName = '') {
+    loginMode = mode;
+    document.getElementById('homeSection').classList.add('hidden');
+    document.getElementById('loginSection').classList.remove('hidden');
+    document.getElementById('loginName').value = prefillName;
 }
 
 function login() {
@@ -113,6 +141,7 @@ function addUser() {
     const balance = parseFloat(prompt('Startsaldo:', '0')) || 0;
     users.push({ name, pin, role, balance });
     saveData();
+    renderAccountList();
 }
 
 function addProduct() {

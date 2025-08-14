@@ -36,6 +36,8 @@
         }
         .balance-text-red { color: #dc2626; }
         .balance-text-orange { color: #f97316; }
+        .list-text-red { color: #b91c1c; }
+        .list-text-orange { color: #f97316; }
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
@@ -218,7 +220,7 @@
                     e.preventDefault();
                     const pinInput = document.getElementById('pin-input').value;
                     if (pinInput === loggedInUser.pin) {
-                        if (loggedInUser.role === 'hoofd-admin') {
+                        if (loggedInUser.role === 'hoofd-admin' || loggedInUser.role === 'sub-admin') {
                             isAdminMode = true;
                             renderAdminView();
                         } else {
@@ -357,7 +359,7 @@
                             ${accounts.length > 0 ? accounts.map(acc => `
                                 <div class="flex justify-between items-center py-2 border-b last:border-b-0 border-gray-200">
                                     <div class="flex items-center gap-2">
-                                        <span class="font-medium text-gray-700 ${acc.balance < (acc.type === 'vaste' ? VASTE_ACCOUNT_LIMIT : GAST_ACCOUNT_LIMIT) ? 'text-red-500' : acc.balance < 5 ? 'text-orange-500' : ''}">${acc.name}</span>
+                                        <span class="font-medium text-gray-800 ${acc.balance < (acc.type === 'vaste' ? VASTE_ACCOUNT_LIMIT : GAST_ACCOUNT_LIMIT) ? 'list-text-red' : acc.balance < 5 ? 'list-text-orange' : ''}">${acc.name}</span>
                                         <span class="text-sm text-gray-500">(${acc.type}${acc.role ? `, ${acc.role}` : ''})</span>
                                     </div>
                                     <div class="flex items-center gap-4">
@@ -524,6 +526,9 @@
                                 
                                 accounts = accounts.map(a => a.id === accountId ? { ...a, name: newName, pin: newPin, type: newType, role: newRole } : a);
                                 saveAccounts();
+                                if (accountId === accounts.find(acc => acc.role === 'hoofd-admin').id) {
+                                    ADMIN_PIN = newPin;
+                                }
                                 renderAdminView();
                                 showMessage(`Account van ${newName} is bijgewerkt.`);
                             }

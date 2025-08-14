@@ -17,16 +17,53 @@
             from { opacity: 0; transform: translateY(-10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        /* Custom kleuren voor status */
-        .text-status-red { color: #dc2626; }
-        .text-status-orange { color: #f97316; }
+        .bg-status-red { background-color: #fca5a5; }
+        .bg-status-orange { background-color: #fdba74; }
+
+        /* Stijlen voor de modal vensters */
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+            z-index: 100;
+        }
+        .modal-content {
+            animation: slideIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 101;
+        }
+        @keyframes slideIn {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
 
-    <div id="app-container" class="bg-white p-8 rounded-xl shadow-lg w-full max-w-xl text-center">
+    <div id="app-container" class="bg-white p-8 rounded-xl shadow-lg w-full max-w-xl text-center relative">
         <!-- De inhoud van de applicatie wordt hier met JavaScript geladen -->
     </div>
+    
+    <!-- Modale vensters voor bewerken en bevestigen -->
+    <div id="modal-container" class="fixed inset-0 hidden items-center justify-center modal-overlay">
+        <div id="edit-modal" class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md modal-content">
+            <h3 id="modal-title" class="text-2xl font-bold mb-4 text-gray-800">Bewerk</h3>
+            <div id="modal-body" class="space-y-4">
+                <!-- Formulier voor bewerkingen wordt hier dynamisch geladen -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm modal -->
+    <div id="confirm-modal-container" class="fixed inset-0 hidden items-center justify-center modal-overlay">
+        <div id="confirm-modal" class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm modal-content text-center">
+            <h3 id="confirm-title" class="text-xl font-bold mb-4 text-gray-800">Bevestig</h3>
+            <p id="confirm-message" class="mb-6 text-gray-600">Weet je het zeker?</p>
+            <div class="flex justify-end gap-4">
+                <button id="confirm-cancel" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">Annuleren</button>
+                <button id="confirm-ok" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">Bevestigen</button>
+            </div>
+        </div>
+    </div>
+
 
     <script>
         // Start de applicatie zodra de pagina geladen is
@@ -37,26 +74,18 @@
             const GAST_ACCOUNT_LIMIT = 0;
 
             // Haal de accounts uit localStorage of initialiseer ze
-            let accounts = JSON.parse(localStorage.getItem('fictional-accounts')) || [
-                { id: 1, name: 'Jan', pin: '1234', balance: 50.00, type: 'vaste' },
-                { id: 2, name: 'Sophie', pin: '5678', balance: 25.50, type: 'vaste' },
-                { id: 3, name: 'Sjoerd', pin: '1111', balance: 100.00, type: 'vaste' }, // Admin account is van het type 'vaste'
-                { id: 4, name: 'Jules', pin: '0000', balance: 0.00, type: 'vaste' },
-                { id: 5, name: 'Gast 1', pin: '9999', balance: 10.00, type: 'gast' }
-            ];
+            let accounts = JSON.parse(localStorage.getItem('fictional-accounts')) || [];
 
             // Haal de producten uit localStorage of initialiseer ze
             let products = JSON.parse(localStorage.getItem('fictional-products')) || [
-                { id: 1, name: 'Zakje chips', price: 0.75 },
-                { id: 2, name: 'Bierveltje', price: 0.75 },
-                { id: 3, name: 'Flesje cola', price: 1.00 }
+                { id: 1, name: 'Zakje chips', price: 0.75, stock: 50 },
+                { id: 2, name: 'Bierveltje', price: 0.75, stock: 50 },
+                { id: 3, name: 'Flesje cola', price: 1.00, stock: 50 }
             ];
 
-            let loggedInUser = null;
-            let isAdminMode = false;
-            let quantities = {};
-            let selectedAdminUser = null;
-
+            // Haal de transacties uit localStorage of initialiseer ze
+            let transactions = JSON.parse(localStorage.getItem('fictional-transactions')) || [];
+            
             // Functie om accounts op te slaan in localStorage
             const saveAccounts = () => {
                 localStorage.setItem('fictional-accounts', JSON.stringify(accounts));
@@ -67,33 +96,45 @@
                 localStorage.setItem('fictional-products', JSON.stringify(products));
             };
 
+            // Functie om transacties op te slaan in localStorage
+            const saveTransactions = () => {
+                localStorage.setItem('fictional-transactions', JSON.stringify(transactions));
+            };
+
+            // Voeg een standaard beheerdersaccount toe als het er nog niet is
+            if (!accounts.find(acc => acc.pin === ADMIN_PIN)) {
+                accounts.push({ id: accounts.length > 0 ? Math.max(...accounts.map(acc => acc.id)) + 1 : 1, name: 'Sjoerd (Admin)', pin: ADMIN_PIN, balance: 100.00, type: 'vaste' });
+                saveAccounts();
+            }
+
+            let loggedInUser = null;
+            let isAdminMode = false;
+            let quantities = {};
+            let selectedAdminUser = null;
+
+
             // Functie om een bericht weer te geven
-            const showMessage = (msg) => {
+            const showMessage = (msg, isError = false) => {
                 const messageBox = document.createElement('div');
-                messageBox.className = 'message-box mb-4 text-sm font-medium text-white p-3 rounded-lg bg-indigo-500';
+                messageBox.className = `message-box mb-4 text-sm font-medium text-white p-3 rounded-lg ${isError ? 'bg-red-500' : 'bg-indigo-500'}`;
                 messageBox.textContent = msg;
                 appContainer.insertBefore(messageBox, appContainer.firstChild);
 
                 setTimeout(() => {
-                    messageBox.classList.add('fade-out');
-                    messageBox.addEventListener('animationend', () => messageBox.remove());
+                    messageBox.remove();
                 }, 3000);
             };
 
             // Bepaal de kleurklasse op basis van het saldo en accounttype
             const getBalanceColorClass = (balance, type) => {
-                if (balance < 0) {
-                    return 'text-status-red';
+                if (balance < (type === 'vaste' ? VASTE_ACCOUNT_LIMIT : GAST_ACCOUNT_LIMIT)) {
+                    return 'bg-status-red text-white';
                 }
-                if (type === 'gast' && balance < 5) {
-                    return 'text-status-orange';
+                if (balance < 5) {
+                    return 'bg-status-orange text-white';
                 }
-                if (type === 'vaste' && balance < 5 && balance >= 0) {
-                     return 'text-status-orange';
-                }
-                return 'text-gray-800';
+                return 'bg-gray-200 text-gray-800';
             };
-
 
             // Functie voor uitloggen
             const handleLogout = () => {
@@ -108,13 +149,16 @@
                 appContainer.innerHTML = `
                     <h1 class="text-3xl font-bold mb-6 text-gray-800">Fictief Wallet Systeem</h1>
                     <h2 class="text-2xl font-semibold mb-4 text-gray-700">Selecteer uw account</h2>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                        ${accounts.map(acc => `
-                            <button data-account-id="${acc.id}" class="select-account-button bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold p-3 rounded-lg transition-colors transform hover:scale-105">
-                                <span class="${getBalanceColorClass(acc.balance, acc.type)}">${acc.name}</span>
-                            </button>
-                        `).join('')}
-                    </div>
+                    ${accounts.filter(acc => acc.pin !== ADMIN_PIN).length > 0 ? 
+                        `<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                            ${accounts.filter(acc => acc.pin !== ADMIN_PIN).map(acc => `
+                                <button data-account-id="${acc.id}" class="select-account-button font-bold p-3 rounded-lg transition-colors transform hover:scale-105 ${getBalanceColorClass(acc.balance, acc.type)}">
+                                    <span>${acc.name}</span>
+                                </button>
+                            `).join('')}
+                        </div>` :
+                        '<p class="text-gray-500">Er zijn nog geen accounts aangemaakt. Log in als beheerder om te beginnen.</p>'
+                    }
                     <div class="mt-6">
                         <button type="button" id="admin-login-button" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold p-3 rounded-lg transition-colors">
                             Admin Login
@@ -185,7 +229,7 @@
                         }
                         showMessage(`Welkom, ${loggedInUser.name}!`);
                     } else {
-                        showMessage('Ongeldige PIN. Probeer het opnieuw.');
+                        showMessage('Ongeldige PIN. Probeer het opnieuw.', true);
                     }
                 });
 
@@ -194,7 +238,7 @@
                     renderHomeView();
                 });
             };
-
+            
             // Functie om de beheerderspagina te renderen
             const renderAdminView = () => {
                 appContainer.innerHTML = `
@@ -226,45 +270,26 @@
                         </div>
                     </div>
                     
-                    <!-- Nieuwe sectie: Geld toevoegen aan alle accounts -->
-                    <div class="mb-6 text-left">
-                        <label class="block text-gray-700 font-semibold mb-2">
-                            Verhoog saldo van alle accounts:
-                        </label>
-                        <div class="flex">
-                            <input
-                                type="number"
-                                id="amount-input-all"
-                                placeholder="Bedrag voor iedereen"
-                                class="flex-grow p-3 rounded-l-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            />
-                            <button
-                                id="add-money-button-all"
-                                class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold p-3 rounded-r-lg transition-colors"
-                            >
-                                Toevoegen aan allen
-                            </button>
-                        </div>
-                    </div>
-
                     <!-- Sectie: Productbeheer -->
                     <div class="mb-6 text-left">
                         <h3 class="text-xl font-semibold mb-2 text-gray-700">Productbeheer</h3>
                         <div id="product-list-admin" class="bg-gray-100 p-4 rounded-lg mb-4 max-h-48 overflow-y-auto">
-                             ${products.map(product => `
+                            ${products.length > 0 ? products.map(product => `
                                 <div class="flex justify-between items-center py-2 border-b last:border-b-0 border-gray-200">
                                     <span class="font-medium text-gray-700">${product.name}</span>
                                     <span class="text-gray-500">€${product.price.toFixed(2)}</span>
+                                    <span class="text-gray-500">Voorraad: ${product.stock}</span>
                                     <div class="flex gap-2">
                                         <button data-product-id="${product.id}" class="edit-product-button text-sm text-indigo-600 hover:underline">Bewerk</button>
                                         <button data-product-id="${product.id}" class="delete-product-button text-sm text-red-500 hover:underline">Verwijder</button>
                                     </div>
                                 </div>
-                            `).join('')}
+                            `).join('') : '<p class="text-gray-500">Geen producten beschikbaar.</p>'}
                         </div>
                         <form id="add-product-form" class="space-y-2">
                             <input type="text" id="new-product-name" placeholder="Nieuwe productnaam" class="w-full p-2 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                             <input type="number" id="new-product-price" placeholder="Prijs (bijv. 0.75)" step="0.01" class="w-full p-2 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                            <input type="number" id="new-product-stock" placeholder="Voorraad" class="w-full p-2 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                             <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold p-2 rounded-lg transition-colors">Product toevoegen</button>
                         </form>
                     </div>
@@ -281,7 +306,7 @@
                                     class="w-full p-3 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                 />
                             </div>
-                             <div class="mb-2">
+                            <div class="mb-2">
                                 <select id="new-account-type" class="w-full p-3 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                                     <option value="vaste">Vast account</option>
                                     <option value="gast">Gast account</option>
@@ -312,7 +337,7 @@
                             ${accounts.length > 0 ? accounts.map(acc => `
                                 <div class="flex justify-between items-center py-2 border-b last:border-b-0 border-gray-200">
                                     <div class="flex items-center gap-2">
-                                        <span class="font-medium ${getBalanceColorClass(acc.balance, acc.type)}">${acc.name}</span>
+                                        <span class="font-medium ${getBalanceColorClass(acc.balance, acc.type).split(' ').pop()}">${acc.name}</span>
                                         <span class="text-sm text-gray-500">(${acc.type})</span>
                                     </div>
                                     <div class="flex items-center gap-4">
@@ -321,6 +346,19 @@
                                     </div>
                                 </div>
                             `).join('') : '<p class="text-gray-500">Geen accounts beschikbaar.</p>'}
+                        </div>
+                    </div>
+                    
+                    <!-- Sectie: Transactielogboek -->
+                    <div class="mb-6 text-left">
+                        <h3 class="text-xl font-semibold mb-2 text-gray-700">Transactielogboek</h3>
+                        <div id="transaction-log-admin" class="bg-gray-100 p-4 rounded-lg max-h-48 overflow-y-auto">
+                            ${transactions.length > 0 ? transactions.map(t => `
+                                <div class="py-2 border-b last:border-b-0 border-gray-200 text-sm text-gray-700 text-left">
+                                    <p class="font-medium">${t.user}: €${t.amount.toFixed(2)} - ${t.items}</p>
+                                    <p class="text-xs text-gray-500">${new Date(t.date).toLocaleString('nl-NL')}</p>
+                                </div>
+                            `).join('') : '<p class="text-gray-500">Geen transacties beschikbaar.</p>'}
                         </div>
                     </div>
 
@@ -340,7 +378,7 @@
                 document.getElementById('add-money-button-single').addEventListener('click', () => {
                     const amountToAdd = parseFloat(document.getElementById('amount-input-single').value);
                     if (!selectedAdminUser || isNaN(amountToAdd) || amountToAdd <= 0) {
-                        showMessage('Selecteer een gebruiker en voer een geldig bedrag in.');
+                        showMessage('Selecteer een gebruiker en voer een geldig bedrag in.', true);
                         return;
                     }
                     accounts = accounts.map(acc =>
@@ -353,27 +391,6 @@
                     showMessage(`€${amountToAdd.toFixed(2)} is toegevoegd aan het saldo van ${selectedAdminUser.name}.`);
                 });
 
-                // Nieuwe event listener voor het toevoegen van geld aan alle accounts
-                document.getElementById('add-money-button-all').addEventListener('click', () => {
-                    const amountToAdd = parseFloat(document.getElementById('amount-input-all').value);
-                    if (isNaN(amountToAdd) || amountToAdd <= 0) {
-                        showMessage('Voer een geldig bedrag in.');
-                        return;
-                    }
-
-                    accounts = accounts.map(acc => {
-                        // Alleen geld toevoegen aan niet-beheerdersaccounts
-                        if (acc.pin !== ADMIN_PIN) {
-                            return { ...acc, balance: acc.balance + amountToAdd };
-                        }
-                        return acc;
-                    });
-                    saveAccounts();
-                    renderAdminView();
-                    showMessage(`€${amountToAdd.toFixed(2)} is toegevoegd aan alle gebruikersaccounts.`);
-                });
-
-
                 document.getElementById('create-account-form').addEventListener('submit', (e) => {
                     e.preventDefault();
                     const newName = document.getElementById('new-account-name').value;
@@ -381,12 +398,12 @@
                     const newType = document.getElementById('new-account-type').value;
 
                     if (!newName || !newPin) {
-                        showMessage('Naam, type en PIN zijn verplicht.');
+                        showMessage('Naam, type en PIN zijn verplicht.', true);
                         return;
                     }
                     // Controleer of de PIN al bestaat
                     if (accounts.some(acc => acc.pin === newPin)) {
-                        showMessage('Deze PIN is al in gebruik. Kies een andere.');
+                        showMessage('Deze PIN is al in gebruik. Kies een andere.', true);
                         return;
                     }
                     const newAccount = {
@@ -407,45 +424,57 @@
                     e.preventDefault();
                     const newName = document.getElementById('new-product-name').value;
                     const newPrice = parseFloat(document.getElementById('new-product-price').value);
-                    if (!newName || isNaN(newPrice) || newPrice <= 0) {
-                        showMessage('Ongeldige naam of prijs. Probeer het opnieuw.');
+                    const newStock = parseInt(document.getElementById('new-product-stock').value, 10);
+                    if (!newName || isNaN(newPrice) || newPrice <= 0 || isNaN(newStock) || newStock <= 0) {
+                        showMessage('Ongeldige naam, prijs of voorraad. Probeer het opnieuw.', true);
                         return;
                     }
                     const newProduct = {
                         id: products.length > 0 ? Math.max(...products.map(p => p.id)) + 1 : 1,
                         name: newName,
-                        price: newPrice
+                        price: newPrice,
+                        stock: newStock
                     };
                     products.push(newProduct);
                     saveProducts();
                     renderAdminView();
                     showMessage(`Product '${newName}' is toegevoegd.`);
                 });
-
+                
                 document.getElementById('product-list-admin').addEventListener('click', (e) => {
                     if (e.target.classList.contains('edit-product-button')) {
                         const productId = parseInt(e.target.dataset.productId);
                         const product = products.find(p => p.id === productId);
-                        const newPrice = prompt(`Voer een nieuwe prijs in voor ${product.name}:`, product.price.toFixed(2));
-                        if (newPrice !== null) {
-                            const parsedPrice = parseFloat(newPrice);
-                            if (!isNaN(parsedPrice) && parsedPrice > 0) {
-                                products = products.map(p => p.id === productId ? { ...p, price: parsedPrice } : p);
+                        showEditModal({
+                            title: `Bewerk product: ${product.name}`,
+                            fields: [
+                                { id: 'edit-name', label: 'Naam', value: product.name, type: 'text' },
+                                { id: 'edit-price', label: 'Prijs', value: product.price.toFixed(2), type: 'number', step: '0.01' },
+                                { id: 'edit-stock', label: 'Voorraad', value: product.stock, type: 'number' }
+                            ],
+                            onSave: (formData) => {
+                                const newName = formData['edit-name'];
+                                const newPrice = parseFloat(formData['edit-price']);
+                                const newStock = parseInt(formData['edit-stock'], 10);
+                                if (!newName || isNaN(newPrice) || newPrice <= 0 || isNaN(newStock) || newStock < 0) {
+                                    showMessage('Ongeldige invoer. Product niet bijgewerkt.', true);
+                                    return;
+                                }
+                                products = products.map(p => p.id === productId ? { ...p, name: newName, price: newPrice, stock: newStock } : p);
                                 saveProducts();
                                 renderAdminView();
-                                showMessage(`De prijs van ${product.name} is aangepast naar €${parsedPrice.toFixed(2)}.`);
-                            } else {
-                                showMessage('Ongeldige prijs ingevoerd.');
+                                showMessage(`Product '${newName}' is bijgewerkt.`);
                             }
-                        }
+                        });
                     } else if (e.target.classList.contains('delete-product-button')) {
                         const productId = parseInt(e.target.dataset.productId);
-                        if (confirm('Weet u zeker dat u dit product wilt verwijderen?')) {
+                        const product = products.find(p => p.id === productId);
+                        showConfirmModal(`Product '${product.name}' verwijderen`, `Weet je zeker dat je het product '${product.name}' wilt verwijderen?`, () => {
                             products = products.filter(p => p.id !== productId);
                             saveProducts();
                             renderAdminView();
                             showMessage('Product succesvol verwijderd.');
-                        }
+                        });
                     }
                 });
 
@@ -453,31 +482,31 @@
                     if (e.target.classList.contains('edit-account-button')) {
                         const accountId = parseInt(e.target.dataset.accountId);
                         const account = accounts.find(a => a.id === accountId);
-                        
-                        const newName = prompt(`Voer een nieuwe naam in voor ${account.name}:`, account.name);
-                        if (newName !== null && newName.trim() !== '') {
-                            account.name = newName;
-                        }
-
-                        const newType = prompt(`Voer een nieuw type in voor ${account.name} (vaste of gast):`, account.type);
-                        if (newType !== null && (newType.toLowerCase() === 'vaste' || newType.toLowerCase() === 'gast')) {
-                             account.type = newType.toLowerCase();
-                        }
-
-                        const newPin = prompt(`Voer een nieuwe pincode in voor ${account.name} (max 4 cijfers):`, account.pin);
-                        if (newPin !== null && newPin.length === 4 && !isNaN(parseInt(newPin))) {
-                            if (accounts.some(acc => acc.pin === newPin && acc.id !== account.id)) {
-                                showMessage('Deze PIN is al in gebruik. Pincode is niet aangepast.');
-                            } else {
-                                account.pin = newPin;
+                        showEditModal({
+                            title: `Bewerk account: ${account.name}`,
+                            fields: [
+                                { id: 'edit-name', label: 'Naam', value: account.name, type: 'text' },
+                                { id: 'edit-pin', label: 'PIN', value: account.pin, type: 'password', maxlength: '4' },
+                                { id: 'edit-type', label: 'Type', value: account.type, type: 'select', options: ['vaste', 'gast'] }
+                            ],
+                            onSave: (formData) => {
+                                const newName = formData['edit-name'];
+                                const newPin = formData['edit-pin'];
+                                const newType = formData['edit-type'];
+                                if (!newName || !newPin || newPin.length !== 4) {
+                                    showMessage('Ongeldige invoer. Account niet bijgewerkt.', true);
+                                    return;
+                                }
+                                if (accounts.some(acc => acc.pin === newPin && acc.id !== accountId)) {
+                                    showMessage('Deze PIN is al in gebruik. Pincode niet aangepast.', true);
+                                    return;
+                                }
+                                accounts = accounts.map(a => a.id === accountId ? { ...a, name: newName, pin: newPin, type: newType } : a);
+                                saveAccounts();
+                                renderAdminView();
+                                showMessage(`Account van ${newName} is bijgewerkt.`);
                             }
-                        } else if (newPin !== null && (newPin.length !== 4 || isNaN(parseInt(newPin)))) {
-                             showMessage('Ongeldige pincode ingevoerd. Pincode is niet aangepast.');
-                        }
-
-                        saveAccounts();
-                        renderAdminView();
-                        showMessage(`Account van ${account.name} is bijgewerkt.`);
+                        });
                     }
                 });
 
@@ -490,7 +519,7 @@
                     <h1 class="text-3xl font-bold mb-6 text-gray-800">Fictief Wallet Systeem</h1>
                     <h2 class="text-2xl font-semibold mb-4 text-gray-700">Welkom, ${loggedInUser.name}!</h2>
                     <div class="text-2xl font-bold mb-6 text-indigo-600">
-                        Saldo: €<span id="user-balance" class="${getBalanceColorClass(loggedInUser.balance, loggedInUser.type)}">${loggedInUser.balance.toFixed(2)}</span>
+                        Saldo: €<span id="user-balance">${loggedInUser.balance.toFixed(2)}</span>
                     </div>
 
                     <div id="product-list" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 text-left">
@@ -499,12 +528,14 @@
                                 <div class="flex-grow">
                                     <h3 class="font-bold text-gray-700">${product.name}</h3>
                                     <p class="text-gray-500">€${product.price.toFixed(2)}</p>
+                                    <p class="text-sm text-gray-500">Op voorraad: ${product.stock}</p>
                                 </div>
                                 <input
                                     type="number"
                                     data-product-id="${product.id}"
                                     value="${quantities[product.id] || 0}"
                                     min="0"
+                                    max="${product.stock}"
                                     class="quantity-input w-16 p-2 rounded-lg border text-center"
                                 />
                             </div>
@@ -537,6 +568,7 @@
                     return acc;
                 }, {});
 
+                // Functie om de totalen bij te werken
                 const updateTotals = () => {
                     const totalCost = Object.keys(quantities).reduce((total, productId) => {
                         const product = products.find(p => p.id === parseInt(productId));
@@ -553,7 +585,9 @@
                         updateTotals();
                     });
                 });
-
+                
+                document.getElementById('user-balance').classList = getBalanceColorClass(loggedInUser.balance, loggedInUser.type).split(' ').pop();
+                
                 document.getElementById('purchase-button').addEventListener('click', () => {
                     const totalCost = parseFloat(document.getElementById('total-cost').textContent);
                     const newBalance = loggedInUser.balance - totalCost;
@@ -566,11 +600,38 @@
                     }
 
                     if (isPurchaseAllowed) {
+                        // Update stock
+                        Object.keys(quantities).forEach(productId => {
+                            const quantity = quantities[productId];
+                            if (quantity > 0) {
+                                products = products.map(p => 
+                                    p.id === parseInt(productId) ? { ...p, stock: p.stock - quantity } : p
+                                );
+                            }
+                        });
+                        saveProducts();
+
                         loggedInUser.balance = newBalance;
                         accounts = accounts.map(acc => acc.id === loggedInUser.id ? loggedInUser : acc);
                         saveAccounts();
+
+                        // Log de transactie
+                        const transactionItems = Object.keys(quantities).map(productId => {
+                            const product = products.find(p => p.id === parseInt(productId));
+                            return `${product.name} (${quantities[productId]}x)`;
+                        }).filter(item => !item.includes('(0x)')).join(', ');
+
+                        transactions.push({
+                            id: transactions.length > 0 ? Math.max(...transactions.map(t => t.id)) + 1 : 1,
+                            user: loggedInUser.name,
+                            amount: totalCost,
+                            items: transactionItems,
+                            date: new Date().toISOString()
+                        });
+                        saveTransactions();
+
                         document.getElementById('user-balance').textContent = loggedInUser.balance.toFixed(2);
-                        document.getElementById('user-balance').className = getBalanceColorClass(loggedInUser.balance, loggedInUser.type);
+                        document.getElementById('user-balance').className = getBalanceColorClass(loggedInUser.balance, loggedInUser.type).split(' ').pop();
                         showMessage(`Aankoop van €${totalCost.toFixed(2)} succesvol! Uw nieuwe saldo is €${loggedInUser.balance.toFixed(2)}.`);
                         
                         // Reset de hoeveelheden op de UI
@@ -581,7 +642,7 @@
                         }, {});
                         updateTotals();
                     } else {
-                        showMessage(`Onvoldoende saldo. Totale kosten: €${totalCost.toFixed(2)}, uw saldo: €${loggedInUser.balance.toFixed(2)}. Het minimaal toegestane saldo is €${creditLimit.toFixed(2)}.`);
+                        showMessage(`Onvoldoende saldo. Totale kosten: €${totalCost.toFixed(2)}, uw saldo: €${loggedInUser.balance.toFixed(2)}. Het minimaal toegestane saldo is €${creditLimit.toFixed(2)}.`, true);
                     }
                 });
 
@@ -589,9 +650,88 @@
                 updateTotals(); // Initieel de totalen updaten
             };
 
+            // Functie voor het tonen van een bewerkingsmodal
+            const showEditModal = ({ title, fields, onSave }) => {
+                const modalContainer = document.getElementById('modal-container');
+                const modalTitle = document.getElementById('modal-title');
+                const modalBody = document.getElementById('modal-body');
+
+                modalTitle.textContent = title;
+                modalBody.innerHTML = `
+                    <form id="edit-form" class="space-y-4">
+                        ${fields.map(field => `
+                            <div>
+                                <label for="${field.id}" class="block text-sm font-medium text-gray-700">${field.label}</label>
+                                ${field.type === 'select' ? `
+                                    <select id="${field.id}" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                        ${field.options.map(option => `<option value="${option}" ${option === field.value ? 'selected' : ''}>${option}</option>`).join('')}
+                                    </select>
+                                ` : `
+                                    <input
+                                        type="${field.type}"
+                                        id="${field.id}"
+                                        value="${field.value}"
+                                        ${field.maxlength ? `maxlength="${field.maxlength}"` : ''}
+                                        ${field.step ? `step="${field.step}"` : ''}
+                                        class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                    />
+                                `}
+                            </div>
+                        `).join('')}
+                        <div class="flex justify-end gap-4 mt-6">
+                            <button type="button" id="modal-cancel-button" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">Annuleren</button>
+                            <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Opslaan</button>
+                        </div>
+                    </form>
+                `;
+                
+                const form = document.getElementById('edit-form');
+                form.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const formData = Object.fromEntries(new FormData(e.target).entries());
+                    onSave(formData);
+                    hideEditModal();
+                });
+                document.getElementById('modal-cancel-button').addEventListener('click', hideEditModal);
+                modalContainer.classList.remove('hidden');
+                modalContainer.classList.add('flex');
+            };
+
+            // Functie voor het verbergen van de bewerkingsmodal
+            const hideEditModal = () => {
+                const modalContainer = document.getElementById('modal-container');
+                modalContainer.classList.add('hidden');
+                modalContainer.classList.remove('flex');
+            };
+
+            // Functie voor het tonen van een bevestigingsmodal
+            const showConfirmModal = (title, message, onConfirm) => {
+                const confirmModalContainer = document.getElementById('confirm-modal-container');
+                document.getElementById('confirm-title').textContent = title;
+                document.getElementById('confirm-message').textContent = message;
+
+                const confirmOkButton = document.getElementById('confirm-ok');
+                const confirmCancelButton = document.getElementById('confirm-cancel');
+                
+                confirmOkButton.onclick = () => {
+                    onConfirm();
+                    hideConfirmModal();
+                };
+                confirmCancelButton.onclick = hideConfirmModal;
+                
+                confirmModalContainer.classList.remove('hidden');
+                confirmModalContainer.classList.add('flex');
+            };
+
+            // Functie voor het verbergen van de bevestigingsmodal
+            const hideConfirmModal = () => {
+                const confirmModalContainer = document.getElementById('confirm-modal-container');
+                confirmModalContainer.classList.add('hidden');
+                confirmModalContainer.classList.remove('flex');
+            };
+
             renderHomeView(); // Start met het inlogscherm
         });
     </script>
-
 </body>
 </html>

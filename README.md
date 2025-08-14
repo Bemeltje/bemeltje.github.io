@@ -34,10 +34,6 @@
             from { transform: scale(0.9); opacity: 0; }
             to { transform: scale(1); opacity: 1; }
         }
-        .balance-text-red { color: #dc2626; }
-        .balance-text-orange { color: #f97316; }
-        .list-text-red { color: #b91c1c; }
-        .list-text-orange { color: #f97316; }
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
@@ -70,46 +66,52 @@
 
 
     <script>
+        // Start de applicatie zodra de pagina geladen is
         document.addEventListener('DOMContentLoaded', () => {
             const appContainer = document.getElementById('app-container');
-            
-            // Variabelen voor de applicatiestatus
-            let ADMIN_PIN = '1111'; // PIN van de hoofd-admin
+            const ADMIN_PIN = '1111';
             const VASTE_ACCOUNT_LIMIT = -25;
             const GAST_ACCOUNT_LIMIT = 0;
 
-            // Functies om data op te slaan in localStorage
-            const saveAccounts = () => {
-                localStorage.setItem('fictional-accounts', JSON.stringify(accounts));
-            };
-            const saveProducts = () => {
-                localStorage.setItem('fictional-products', JSON.stringify(products));
-            };
-            const saveTransactions = () => {
-                localStorage.setItem('fictional-transactions', JSON.stringify(transactions));
-            };
-
             // Haal de accounts uit localStorage of initialiseer ze
             let accounts = JSON.parse(localStorage.getItem('fictional-accounts')) || [];
+
+            // Haal de producten uit localStorage of initialiseer ze
             let products = JSON.parse(localStorage.getItem('fictional-products')) || [
                 { id: 1, name: 'Zakje chips', price: 0.75, stock: 50 },
                 { id: 2, name: 'Bierveltje', price: 0.75, stock: 50 },
                 { id: 3, name: 'Flesje cola', price: 1.00, stock: 50 }
             ];
+
+            // Haal de transacties uit localStorage of initialiseer ze
             let transactions = JSON.parse(localStorage.getItem('fictional-transactions')) || [];
             
-            // Voeg een standaard hoofd-adminaccount toe als het er nog niet is
-            if (!accounts.find(acc => acc.role === 'hoofd-admin')) {
-                accounts.push({ id: accounts.length > 0 ? Math.max(...accounts.map(acc => acc.id)) + 1 : 1, name: 'Sjoerd (Hoofd Admin)', pin: ADMIN_PIN, balance: 100.00, type: 'vaste', role: 'hoofd-admin' });
+            // Functie om accounts op te slaan in localStorage
+            const saveAccounts = () => {
+                localStorage.setItem('fictional-accounts', JSON.stringify(accounts));
+            };
+
+            // Functie om producten op te slaan in localStorage
+            const saveProducts = () => {
+                localStorage.setItem('fictional-products', JSON.stringify(products));
+            };
+
+            // Functie om transacties op te slaan in localStorage
+            const saveTransactions = () => {
+                localStorage.setItem('fictional-transactions', JSON.stringify(transactions));
+            };
+
+            // Voeg een standaard beheerdersaccount toe als het er nog niet is
+            if (!accounts.find(acc => acc.pin === ADMIN_PIN)) {
+                accounts.push({ id: accounts.length > 0 ? Math.max(...accounts.map(acc => acc.id)) + 1 : 1, name: 'Sjoerd (Admin)', pin: ADMIN_PIN, balance: 100.00, type: 'vaste' });
                 saveAccounts();
-            } else {
-                 ADMIN_PIN = accounts.find(acc => acc.role === 'hoofd-admin').pin;
             }
 
             let loggedInUser = null;
             let isAdminMode = false;
             let quantities = {};
             let selectedAdminUser = null;
+
 
             // Functie om een bericht weer te geven
             const showMessage = (msg, isError = false) => {
@@ -147,9 +149,9 @@
                 appContainer.innerHTML = `
                     <h1 class="text-3xl font-bold mb-6 text-gray-800">Fictief Wallet Systeem</h1>
                     <h2 class="text-2xl font-semibold mb-4 text-gray-700">Selecteer uw account</h2>
-                    ${accounts.filter(acc => acc.role !== 'hoofd-admin').length > 0 ? 
+                    ${accounts.filter(acc => acc.pin !== ADMIN_PIN).length > 0 ? 
                         `<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                            ${accounts.filter(acc => acc.role !== 'hoofd-admin').map(acc => `
+                            ${accounts.filter(acc => acc.pin !== ADMIN_PIN).map(acc => `
                                 <button data-account-id="${acc.id}" class="select-account-button font-bold p-3 rounded-lg transition-colors transform hover:scale-105 ${getBalanceColorClass(acc.balance, acc.type)}">
                                     <span>${acc.name}</span>
                                 </button>
@@ -186,10 +188,9 @@
                     renderHomeView();
                     return;
                 }
-                const isHeadAdmin = loggedInUser.role === 'hoofd-admin';
                 appContainer.innerHTML = `
                     <h1 class="text-3xl font-bold mb-6 text-gray-800">Fictief Wallet Systeem</h1>
-                    <h2 class="text-2xl font-semibold mb-4 text-gray-700">${isHeadAdmin ? 'Welkom in het beheerderspaneel!' : `Welkom, ${loggedInUser.name}!`}</h2>
+                    <h2 class="text-2xl font-semibold mb-4 text-gray-700">Welkom, ${loggedInUser.name}!</h2>
                     <form id="pin-form" class="space-y-4">
                         <input
                             type="password"
@@ -220,7 +221,7 @@
                     e.preventDefault();
                     const pinInput = document.getElementById('pin-input').value;
                     if (pinInput === loggedInUser.pin) {
-                        if (loggedInUser.role === 'hoofd-admin' || loggedInUser.role === 'sub-admin') {
+                        if (loggedInUser.pin === ADMIN_PIN) {
                             isAdminMode = true;
                             renderAdminView();
                         } else {
@@ -240,94 +241,35 @@
             
             // Functie om de beheerderspagina te renderen
             const renderAdminView = () => {
-                const isHeadAdmin = loggedInUser.role === 'hoofd-admin';
-                const isSubAdmin = loggedInUser.role === 'sub-admin';
-
                 appContainer.innerHTML = `
                     <h1 class="text-3xl font-bold mb-6 text-gray-800">Fictief Wallet Systeem</h1>
                     <h2 class="text-2xl font-semibold mb-4 text-gray-700">Beheerderspaneel</h2>
                     
-                    <!-- Sectie: Beheerdersfuncties -->
-                    <div class="mb-6 text-left">
-                        <h3 class="text-xl font-semibold mb-2 text-gray-700">Beheerdersfuncties</h3>
-                        
-                        <!-- Admin PIN wijzigen (alleen voor hoofd-admin) -->
-                        ${isHeadAdmin ? `
-                            <div class="mb-4">
-                                <h4 class="font-semibold text-gray-700 mb-2">PIN van hoofd-admin wijzigen</h4>
-                                <div class="flex gap-2">
-                                    <input
-                                        type="password"
-                                        id="new-admin-pin"
-                                        placeholder="Nieuwe PIN (4 cijfers)"
-                                        maxlength="4"
-                                        class="flex-grow p-3 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    />
-                                    <button id="change-admin-pin-button" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold p-3 rounded-lg transition-colors">
-                                        Wijzig
-                                    </button>
-                                </div>
-                            </div>
-                        ` : ''}
-
-                        <!-- Geld toevoegen aan individuele accounts (voor sub-admins en hoofd-admins) -->
-                        ${isHeadAdmin || isSubAdmin ? `
-                            <div class="mb-4">
-                                <h4 class="font-semibold text-gray-700 mb-2">Geld toevoegen aan account</h4>
-                                <select id="admin-user-select" class="w-full p-3 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-2">
-                                    <option value="">Selecteer een gebruiker</option>
-                                    ${accounts.filter(acc => acc.role !== 'hoofd-admin').map(acc => `<option value="${acc.id}">${acc.name} (${acc.type}) - €${acc.balance.toFixed(2)}</option>`).join('')}
-                                </select>
-                                <div class="flex">
-                                    <input
-                                        type="number"
-                                        id="amount-input-single"
-                                        placeholder="Bedrag"
-                                        class="flex-grow p-3 rounded-l-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    />
-                                    <button
-                                        id="add-money-button-single"
-                                        class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold p-3 rounded-r-lg transition-colors"
-                                    >
-                                        Toevoegen
-                                    </button>
-                                </div>
-                            </div>
-                        ` : ''}
-
-                        <!-- Account aanmaken (voor sub-admins en hoofd-admins) -->
-                        ${isHeadAdmin || isSubAdmin ? `
-                            <div class="mb-4">
-                                <h4 class="font-semibold text-gray-700 mb-2">Account aanmaken</h4>
-                                <form id="create-account-form" class="space-y-2">
-                                    <input
-                                        type="text"
-                                        id="new-account-name"
-                                        placeholder="Accountnaam"
-                                        class="w-full p-2 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    />
-                                    <select id="new-account-type" class="w-full p-2 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                                        <option value="vaste">Vast account</option>
-                                        <option value="gast">Gast account</option>
-                                    </select>
-                                    <input
-                                        type="password"
-                                        id="new-account-pin"
-                                        placeholder="PIN-code (max 4 cijfers)"
-                                        maxlength="4"
-                                        class="w-full p-2 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    />
-                                    <button
-                                        type="submit"
-                                        class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold p-2 rounded-lg transition-colors"
-                                    >
-                                        Nieuw account aanmaken
-                                    </button>
-                                </form>
-                            </div>
-                        ` : ''}
+                    <!-- Sectie: Geld toevoegen aan individuele accounts -->
+                    <div class="mb-4 text-left">
+                        <label class="block text-gray-700 font-semibold mb-2">
+                            Geld toevoegen aan account:
+                        </label>
+                        <select id="admin-user-select" class="w-full p-3 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-2">
+                            <option value="">Selecteer een gebruiker</option>
+                            ${accounts.map(acc => `<option value="${acc.id}">${acc.name} (${acc.type}) - €${acc.balance.toFixed(2)}</option>`).join('')}
+                        </select>
+                        <div class="flex">
+                            <input
+                                type="number"
+                                id="amount-input-single"
+                                placeholder="Bedrag"
+                                class="flex-grow p-3 rounded-l-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                            <button
+                                id="add-money-button-single"
+                                class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold p-3 rounded-r-lg transition-colors"
+                            >
+                                Toevoegen
+                            </button>
+                        </div>
                     </div>
-
+                    
                     <!-- Sectie: Productbeheer -->
                     <div class="mb-6 text-left">
                         <h3 class="text-xl font-semibold mb-2 text-gray-700">Productbeheer</h3>
@@ -352,6 +294,42 @@
                         </form>
                     </div>
 
+                    <!-- Sectie: Account aanmaken -->
+                    <div class="mb-6 text-left">
+                        <h3 class="text-xl font-semibold mb-2 text-gray-700">Account aanmaken</h3>
+                        <form id="create-account-form">
+                            <div class="mb-2">
+                                <input
+                                    type="text"
+                                    id="new-account-name"
+                                    placeholder="Accountnaam"
+                                    class="w-full p-3 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </div>
+                            <div class="mb-2">
+                                <select id="new-account-type" class="w-full p-3 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    <option value="vaste">Vast account</option>
+                                    <option value="gast">Gast account</option>
+                                </select>
+                            </div>
+                            <div class="mb-2">
+                                <input
+                                    type="password"
+                                    id="new-account-pin"
+                                    placeholder="PIN-code (max 4 cijfers)"
+                                    maxlength="4"
+                                    class="w-full p-3 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold p-3 rounded-lg transition-colors"
+                            >
+                                Nieuw account aanmaken
+                            </button>
+                        </form>
+                    </div>
+
                     <!-- Sectie: Overzicht van accounts -->
                     <div class="mb-6 text-left">
                         <h3 class="text-xl font-semibold mb-2 text-gray-700">Alle accounts</h3>
@@ -359,13 +337,12 @@
                             ${accounts.length > 0 ? accounts.map(acc => `
                                 <div class="flex justify-between items-center py-2 border-b last:border-b-0 border-gray-200">
                                     <div class="flex items-center gap-2">
-                                        <span class="font-medium text-gray-800 ${acc.balance < (acc.type === 'vaste' ? VASTE_ACCOUNT_LIMIT : GAST_ACCOUNT_LIMIT) ? 'list-text-red' : acc.balance < 5 ? 'list-text-orange' : ''}">${acc.name}</span>
-                                        <span class="text-sm text-gray-500">(${acc.type}${acc.role ? `, ${acc.role}` : ''})</span>
+                                        <span class="font-medium ${getBalanceColorClass(acc.balance, acc.type).split(' ').pop()}">${acc.name}</span>
+                                        <span class="text-sm text-gray-500">(${acc.type})</span>
                                     </div>
                                     <div class="flex items-center gap-4">
                                         <span class="text-gray-500">€${acc.balance.toFixed(2)}</span>
                                         <button data-account-id="${acc.id}" class="edit-account-button text-sm text-indigo-600 hover:underline">Bewerk</button>
-                                        ${acc.role !== 'hoofd-admin' ? `<button data-account-id="${acc.id}" class="delete-account-button text-sm text-red-500 hover:underline">Verwijder</button>` : ''}
                                     </div>
                                 </div>
                             `).join('') : '<p class="text-gray-500">Geen accounts beschikbaar.</p>'}
@@ -394,72 +371,76 @@
                 `;
                 
                 // Event listeners voor het beheerderspaneel
-                if (isHeadAdmin) {
-                     document.getElementById('change-admin-pin-button').addEventListener('click', () => {
-                        const newPin = document.getElementById('new-admin-pin').value;
-                        const adminAccount = accounts.find(acc => acc.role === 'hoofd-admin');
-                        if (newPin.length === 4 && !isNaN(parseInt(newPin)) && !accounts.some(acc => acc.pin === newPin && acc.id !== adminAccount.id)) {
-                             ADMIN_PIN = newPin;
-                             adminAccount.pin = newPin;
-                             saveAccounts();
-                             renderAdminView();
-                             showMessage('PIN van hoofd-admin succesvol gewijzigd.');
-                        } else {
-                            showMessage('Ongeldige PIN. PIN moet 4 cijfers lang zijn en uniek.', true);
-                        }
-                     });
-                }
-               
-                if (isHeadAdmin || isSubAdmin) {
-                    document.getElementById('admin-user-select').addEventListener('change', (e) => {
-                        selectedAdminUser = accounts.find(acc => acc.id === parseInt(e.target.value));
-                    });
+                document.getElementById('admin-user-select').addEventListener('change', (e) => {
+                    selectedAdminUser = accounts.find(acc => acc.id === parseInt(e.target.value));
+                });
 
-                    document.getElementById('add-money-button-single').addEventListener('click', () => {
-                        const amountToAdd = parseFloat(document.getElementById('amount-input-single').value);
-                        if (!selectedAdminUser || isNaN(amountToAdd) || amountToAdd <= 0) {
-                            showMessage('Selecteer een gebruiker en voer een geldig bedrag in.', true);
-                            return;
-                        }
-                        accounts = accounts.map(acc =>
-                            acc.id === selectedAdminUser.id
-                                ? { ...acc, balance: acc.balance + amountToAdd }
-                                : acc
-                        );
-                        saveAccounts();
-                        renderAdminView();
-                        showMessage(`€${amountToAdd.toFixed(2)} is toegevoegd aan het saldo van ${selectedAdminUser.name}.`);
-                    });
+                document.getElementById('add-money-button-single').addEventListener('click', () => {
+                    const amountToAdd = parseFloat(document.getElementById('amount-input-single').value);
+                    if (!selectedAdminUser || isNaN(amountToAdd) || amountToAdd <= 0) {
+                        showMessage('Selecteer een gebruiker en voer een geldig bedrag in.', true);
+                        return;
+                    }
+                    accounts = accounts.map(acc =>
+                        acc.id === selectedAdminUser.id
+                            ? { ...acc, balance: acc.balance + amountToAdd }
+                            : acc
+                    );
+                    saveAccounts();
+                    renderAdminView(); // Render de pagina opnieuw om het saldo bij te werken
+                    showMessage(`€${amountToAdd.toFixed(2)} is toegevoegd aan het saldo van ${selectedAdminUser.name}.`);
+                });
 
-                    document.getElementById('create-account-form').addEventListener('submit', (e) => {
-                        e.preventDefault();
-                        const newName = document.getElementById('new-account-name').value;
-                        const newPin = document.getElementById('new-account-pin').value;
-                        const newType = document.getElementById('new-account-type').value;
+                document.getElementById('create-account-form').addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const newName = document.getElementById('new-account-name').value;
+                    const newPin = document.getElementById('new-account-pin').value;
+                    const newType = document.getElementById('new-account-type').value;
 
-                        if (!newName || !newPin || newPin.length !== 4) {
-                            showMessage('Naam, type en PIN zijn verplicht en PIN moet 4 cijfers lang zijn.', true);
-                            return;
-                        }
-                        if (accounts.some(acc => acc.pin === newPin)) {
-                            showMessage('Deze PIN is al in gebruik. Kies een andere.', true);
-                            return;
-                        }
-                        const newAccount = {
-                            id: accounts.length > 0 ? Math.max(...accounts.map(acc => acc.id)) + 1 : 1,
-                            name: newName,
-                            pin: newPin,
-                            balance: 0.00,
-                            type: newType,
-                            role: 'user' // Nieuwe accounts krijgen standaard de rol 'user'
-                        };
-                        accounts.push(newAccount);
-                        saveAccounts();
-                        renderAdminView();
-                        showMessage(`Account '${newName}' succesvol aangemaakt.`);
-                    });
-                }
+                    if (!newName || !newPin) {
+                        showMessage('Naam, type en PIN zijn verplicht.', true);
+                        return;
+                    }
+                    // Controleer of de PIN al bestaat
+                    if (accounts.some(acc => acc.pin === newPin)) {
+                        showMessage('Deze PIN is al in gebruik. Kies een andere.', true);
+                        return;
+                    }
+                    const newAccount = {
+                        id: accounts.length > 0 ? Math.max(...accounts.map(acc => acc.id)) + 1 : 1,
+                        name: newName,
+                        pin: newPin,
+                        balance: 0.00,
+                        type: newType
+                    };
+                    accounts.push(newAccount);
+                    saveAccounts();
+                    renderAdminView();
+                    showMessage(`Account '${newName}' succesvol aangemaakt.`);
+                });
 
+                // Event listeners voor productbeheer
+                document.getElementById('add-product-form').addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const newName = document.getElementById('new-product-name').value;
+                    const newPrice = parseFloat(document.getElementById('new-product-price').value);
+                    const newStock = parseInt(document.getElementById('new-product-stock').value, 10);
+                    if (!newName || isNaN(newPrice) || newPrice <= 0 || isNaN(newStock) || newStock <= 0) {
+                        showMessage('Ongeldige naam, prijs of voorraad. Probeer het opnieuw.', true);
+                        return;
+                    }
+                    const newProduct = {
+                        id: products.length > 0 ? Math.max(...products.map(p => p.id)) + 1 : 1,
+                        name: newName,
+                        price: newPrice,
+                        stock: newStock
+                    };
+                    products.push(newProduct);
+                    saveProducts();
+                    renderAdminView();
+                    showMessage(`Product '${newName}' is toegevoegd.`);
+                });
+                
                 document.getElementById('product-list-admin').addEventListener('click', (e) => {
                     if (e.target.classList.contains('edit-product-button')) {
                         const productId = parseInt(e.target.dataset.productId);
@@ -506,15 +487,12 @@
                             fields: [
                                 { id: 'edit-name', label: 'Naam', value: account.name, type: 'text' },
                                 { id: 'edit-pin', label: 'PIN', value: account.pin, type: 'password', maxlength: '4' },
-                                { id: 'edit-type', label: 'Type', value: account.type, type: 'select', options: ['vaste', 'gast'] },
-                                { id: 'edit-role', label: 'Rol', value: account.role || 'user', type: 'select', options: ['user', 'sub-admin', 'hoofd-admin'] }
+                                { id: 'edit-type', label: 'Type', value: account.type, type: 'select', options: ['vaste', 'gast'] }
                             ],
                             onSave: (formData) => {
                                 const newName = formData['edit-name'];
                                 const newPin = formData['edit-pin'];
                                 const newType = formData['edit-type'];
-                                const newRole = formData['edit-role'];
-                                
                                 if (!newName || !newPin || newPin.length !== 4) {
                                     showMessage('Ongeldige invoer. Account niet bijgewerkt.', true);
                                     return;
@@ -523,25 +501,12 @@
                                     showMessage('Deze PIN is al in gebruik. Pincode niet aangepast.', true);
                                     return;
                                 }
-                                
-                                accounts = accounts.map(a => a.id === accountId ? { ...a, name: newName, pin: newPin, type: newType, role: newRole } : a);
+                                accounts = accounts.map(a => a.id === accountId ? { ...a, name: newName, pin: newPin, type: newType } : a);
                                 saveAccounts();
-                                if (accountId === accounts.find(acc => acc.role === 'hoofd-admin').id) {
-                                    ADMIN_PIN = newPin;
-                                }
                                 renderAdminView();
                                 showMessage(`Account van ${newName} is bijgewerkt.`);
                             }
                         });
-                    } else if (e.target.classList.contains('delete-account-button')) {
-                         const accountId = parseInt(e.target.dataset.accountId);
-                         const account = accounts.find(a => a.id === accountId);
-                         showConfirmModal(`Account '${account.name}' verwijderen`, `Weet je zeker dat je het account van '${account.name}' wilt verwijderen? Dit kan niet ongedaan worden gemaakt.`, () => {
-                             accounts = accounts.filter(a => a.id !== accountId);
-                             saveAccounts();
-                             renderAdminView();
-                             showMessage(`Account van ${account.name} succesvol verwijderd.`);
-                         });
                     }
                 });
 
@@ -553,8 +518,8 @@
                 appContainer.innerHTML = `
                     <h1 class="text-3xl font-bold mb-6 text-gray-800">Fictief Wallet Systeem</h1>
                     <h2 class="text-2xl font-semibold mb-4 text-gray-700">Welkom, ${loggedInUser.name}!</h2>
-                    <div class="text-2xl font-bold mb-6">
-                        Saldo: €<span id="user-balance" class="${loggedInUser.balance < (loggedInUser.type === 'vaste' ? VASTE_ACCOUNT_LIMIT : GAST_ACCOUNT_LIMIT) ? 'balance-text-red' : loggedInUser.balance < 5 ? 'balance-text-orange' : 'text-indigo-600'}">${loggedInUser.balance.toFixed(2)}</span>
+                    <div class="text-2xl font-bold mb-6 text-indigo-600">
+                        Saldo: €<span id="user-balance">${loggedInUser.balance.toFixed(2)}</span>
                     </div>
 
                     <div id="product-list" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 text-left">
@@ -597,11 +562,13 @@
                     </button>
                 `;
 
+                // Reset de hoeveelheden en de totale kosten
                 quantities = products.reduce((acc, product) => {
                     acc[product.id] = quantities[product.id] || 0;
                     return acc;
                 }, {});
 
+                // Functie om de totalen bij te werken
                 const updateTotals = () => {
                     const totalCost = Object.keys(quantities).reduce((total, productId) => {
                         const product = products.find(p => p.id === parseInt(productId));
@@ -619,12 +586,20 @@
                     });
                 });
                 
+                document.getElementById('user-balance').classList = getBalanceColorClass(loggedInUser.balance, loggedInUser.type).split(' ').pop();
+                
                 document.getElementById('purchase-button').addEventListener('click', () => {
                     const totalCost = parseFloat(document.getElementById('total-cost').textContent);
                     const newBalance = loggedInUser.balance - totalCost;
+
+                    let isPurchaseAllowed = false;
                     const creditLimit = loggedInUser.type === 'vaste' ? VASTE_ACCOUNT_LIMIT : GAST_ACCOUNT_LIMIT;
 
                     if (newBalance >= creditLimit) {
+                        isPurchaseAllowed = true;
+                    }
+
+                    if (isPurchaseAllowed) {
                         // Update stock
                         Object.keys(quantities).forEach(productId => {
                             const quantity = quantities[productId];
@@ -656,7 +631,7 @@
                         saveTransactions();
 
                         document.getElementById('user-balance').textContent = loggedInUser.balance.toFixed(2);
-                        document.getElementById('user-balance').className = loggedInUser.balance < (loggedInUser.type === 'vaste' ? VASTE_ACCOUNT_LIMIT : GAST_ACCOUNT_LIMIT) ? 'balance-text-red' : loggedInUser.balance < 5 ? 'balance-text-orange' : 'text-indigo-600';
+                        document.getElementById('user-balance').className = getBalanceColorClass(loggedInUser.balance, loggedInUser.type).split(' ').pop();
                         showMessage(`Aankoop van €${totalCost.toFixed(2)} succesvol! Uw nieuwe saldo is €${loggedInUser.balance.toFixed(2)}.`);
                         
                         // Reset de hoeveelheden op de UI
@@ -675,6 +650,7 @@
                 updateTotals(); // Initieel de totalen updaten
             };
 
+            // Functie voor het tonen van een bewerkingsmodal
             const showEditModal = ({ title, fields, onSave }) => {
                 const modalContainer = document.getElementById('modal-container');
                 const modalTitle = document.getElementById('modal-title');
@@ -721,12 +697,14 @@
                 modalContainer.classList.add('flex');
             };
 
+            // Functie voor het verbergen van de bewerkingsmodal
             const hideEditModal = () => {
                 const modalContainer = document.getElementById('modal-container');
                 modalContainer.classList.add('hidden');
                 modalContainer.classList.remove('flex');
             };
 
+            // Functie voor het tonen van een bevestigingsmodal
             const showConfirmModal = (title, message, onConfirm) => {
                 const confirmModalContainer = document.getElementById('confirm-modal-container');
                 document.getElementById('confirm-title').textContent = title;
@@ -745,6 +723,7 @@
                 confirmModalContainer.classList.add('flex');
             };
 
+            // Functie voor het verbergen van de bevestigingsmodal
             const hideConfirmModal = () => {
                 const confirmModalContainer = document.getElementById('confirm-modal-container');
                 confirmModalContainer.classList.add('hidden');

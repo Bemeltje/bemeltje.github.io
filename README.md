@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="nl">
+<!DOCTYPE html>
+<html lang="nl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6,13 +7,11 @@
 <style>
     body { font-family: Arial, sans-serif; background-color: #fff; color: #222; margin: 0; padding: 0; }
     header { background-color: #333; color: #fff; padding: 10px; text-align: center; }
-    button, input { font-size: 1rem; margin: 5px; padding: 8px; border-radius: 5px; border: 1px solid #ccc; }
-    button { background-color: #0066cc; color: white; border: none; cursor: pointer; }
+    button { font-size: 1rem; margin: 5px; padding: 8px 12px; border-radius: 5px; border: none; background-color: #0066cc; color: white; cursor: pointer; }
     button:hover { background-color: #004999; }
     .hidden { display: none; }
     .container { padding: 15px; }
     .item { border: 1px solid #ccc; border-radius: 8px; padding: 10px; margin: 10px 0; }
-    .admin { background-color: #f8f8f8; padding: 10px; border-radius: 5px; }
 </style>
 </head>
 <body>
@@ -20,49 +19,172 @@
     <h1>Fictief Wallet Systeem</h1>
 </header>
 <div class="container">
-    <div id="homeSection">
-        <h2>Selecteer een account</h2>
+    <!-- Hoofdscherm -->
+    <div id="homeScreen">
+        <h2>Kies een account</h2>
         <div id="accountList"></div>
-        <button onclick="adminLoginPrompt()">Admin</button>
+        <hr>
+        <button onclick="loginAdmin()">🔑 Admin</button>
     </div>
-    <div id="dashboard" class="hidden">
-        <h2 id="welcomeMsg"></h2>
+
+    <!-- Dashboard gebruiker -->
+    <div id="userDashboard" class="hidden">
+        <h2 id="welcomeUser"></h2>
         <div id="balanceSection"></div>
         <div id="productList"></div>
-        <div id="adminPanel" class="hidden"></div>
+        <button onclick="logout()">⬅ Terug</button>
+    </div>
+
+    <!-- Admin dashboard -->
+    <div id="adminDashboard" class="hidden">
+        <h2>Admin Beheer</h2>
+        <button onclick="addUser()">Account toevoegen</button>
+        <button onclick="addFunds()">Geld toevoegen</button>
+        <button onclick="addProduct()">Product toevoegen</button>
+        <button onclick="changeAdminPin()">Admin pincode wijzigen</button>
+        <div id="adminProducts"></div>
+        <button onclick="logout()">⬅ Terug</button>
     </div>
 </div>
+
 <script>
 let users = [];
 let products = [];
 let currentUser = null;
-let adminPin = localStorage.getItem('adminPin') || '0000';function saveData() { localStorage.setItem('users', JSON.stringify(users)); localStorage.setItem('products', JSON.stringify(products)); localStorage.setItem('adminPin', adminPin); }
+let adminPin = localStorage.getItem('adminPin') || "0000";
 
-function loadData() { users = JSON.parse(localStorage.getItem('users')) || []; products = JSON.parse(localStorage.getItem('products')) || []; }
+function saveData() {
+    localStorage.setItem('users', JSON.stringify(users));
+    localStorage.setItem('products', JSON.stringify(products));
+    localStorage.setItem('adminPin', adminPin);
+}
 
-function renderAccountList() { const list = document.getElementById('accountList'); list.innerHTML = ''; users.forEach((u, i) => { const btn = document.createElement('button'); btn.textContent = u.name; btn.onclick = () => accountLogin(i); list.appendChild(btn); }); }
+function loadData() {
+    users = JSON.parse(localStorage.getItem('users')) || [
+        { name: "Jan", pin: "1111", balance: 10, role: "user" },
+        { name: "Piet", pin: "2222", balance: 5, role: "user" }
+    ];
+    products = JSON.parse(localStorage.getItem('products')) || [
+        { name: "Chips", price: 1.5, stock: 5 },
+        { name: "Snoep", price: 1.0, stock: 10 }
+    ];
+}
 
-function accountLogin(index) { const pin = prompt('Voer pincode in voor ' + users[index].name); if (pin === users[index].pin) { currentUser = users[index]; document.getElementById('homeSection').classList.add('hidden'); document.getElementById('dashboard').classList.remove('hidden'); document.getElementById('welcomeMsg').innerText = Welkom, ${currentUser.name}; updateDashboard(); } else { alert('Ongeldige pincode'); } }
+function renderHomeScreen() {
+    const list = document.getElementById('accountList');
+    list.innerHTML = "";
+    users.forEach((u, i) => {
+        const btn = document.createElement('button');
+        btn.textContent = u.name;
+        btn.onclick = () => loginUser(i);
+        list.appendChild(btn);
+    });
+}
 
-function adminLoginPrompt() { const pin = prompt('Voer admin pincode in:'); if (pin === adminPin) { currentUser = { name: 'Hoofdadmin', role: 'admin', balance: 0 }; document.getElementById('homeSection').classList.add('hidden'); document.getElementById('dashboard').classList.remove('hidden'); document.getElementById('welcomeMsg').innerText = Welkom, Hoofdadmin; updateDashboard(); } else { alert('Ongeldige admin pincode'); } }
+function loginUser(index) {
+    const pin = prompt(`Pincode voor ${users[index].name}:`);
+    if (pin === users[index].pin) {
+        currentUser = users[index];
+        document.getElementById('homeScreen').classList.add('hidden');
+        document.getElementById('userDashboard').classList.remove('hidden');
+        document.getElementById('welcomeUser').innerText = `Welkom, ${currentUser.name}`;
+        updateUserDashboard();
+    } else {
+        alert("Foutieve pincode");
+    }
+}
 
-function updateDashboard() { document.getElementById('balanceSection').innerHTML = <p>Saldo: €${(currentUser.balance || 0).toFixed(2)}</p>; renderProducts(); if (currentUser.role === 'admin' || currentUser.role === 'subadmin') { renderAdminPanel(); } }
+function loginAdmin() {
+    const pin = prompt("Voer admin pincode in:");
+    if (pin === adminPin) {
+        document.getElementById('homeScreen').classList.add('hidden');
+        document.getElementById('adminDashboard').classList.remove('hidden');
+        renderAdminProducts();
+    } else {
+        alert("Foutieve admin pincode");
+    }
+}
 
-function renderProducts() { const productList = document.getElementById('productList'); productList.innerHTML = '<h3>Producten</h3>'; products.forEach((p, i) => { productList.innerHTML += <div class="item">${p.name} - €${p.price.toFixed(2)} (${p.stock} op voorraad) <button onclick="buyProduct(${i})">Kopen</button></div>; }); }
+function updateUserDashboard() {
+    document.getElementById('balanceSection').innerHTML = `<p>Saldo: €${currentUser.balance.toFixed(2)}</p>`;
+    const productList = document.getElementById('productList');
+    productList.innerHTML = "";
+    products.forEach((p, i) => {
+        const div = document.createElement('div');
+        div.className = "item";
+        div.innerHTML = `${p.name} - €${p.price.toFixed(2)} (${p.stock} op voorraad) 
+            <button onclick="buyProduct(${i})">Kopen</button>`;
+        productList.appendChild(div);
+    });
+}
 
-function buyProduct(index) { const product = products[index]; if (product.stock > 0 && currentUser.balance >= product.price) { product.stock--; currentUser.balance -= product.price; saveData(); updateDashboard(); } else { alert('Onvoldoende saldo of geen voorraad'); } }
+function buyProduct(index) {
+    const product = products[index];
+    if (product.stock > 0 && currentUser.balance >= product.price) {
+        product.stock--;
+        currentUser.balance -= product.price;
+        saveData();
+        updateUserDashboard();
+    } else {
+        alert("Onvoldoende saldo of geen voorraad");
+    }
+}
 
-function renderAdminPanel() { const panel = document.getElementById('adminPanel'); panel.classList.remove('hidden'); panel.innerHTML = '<h3>Beheer</h3>'; panel.innerHTML += '<button onclick="addProduct()">Product toevoegen</button>'; panel.innerHTML += '<button onclick="addFunds()">Geld toevoegen aan account</button>'; panel.innerHTML += '<button onclick="addUser()">Account toevoegen</button>'; panel.innerHTML += '<button onclick="changeAdminPin()">Admin pincode wijzigen</button>'; }
+function renderAdminProducts() {
+    const adminProducts = document.getElementById('adminProducts');
+    adminProducts.innerHTML = "<h3>Producten</h3>";
+    products.forEach((p) => {
+        adminProducts.innerHTML += `<div>${p.name} - €${p.price.toFixed(2)} (${p.stock} stuks)</div>`;
+    });
+}
 
-function addUser() { const name = prompt('Naam:'); const pin = prompt('Pincode:'); const role = prompt('Rol (admin, subadmin, user):', 'user'); const balance = parseFloat(prompt('Startsaldo:', '0')) || 0; users.push({ name, pin, role, balance }); saveData(); renderAccountList(); }
+function addUser() {
+    const name = prompt("Naam:");
+    const pin = prompt("Pincode:");
+    const balance = parseFloat(prompt("Startsaldo:")) || 0;
+    users.push({ name, pin, balance, role: "user" });
+    saveData();
+    renderHomeScreen();
+}
 
-function addProduct() { const name = prompt('Productnaam:'); const price = parseFloat(prompt('Prijs:')) || 0; const stock = parseInt(prompt('Voorraad:'), 10) || 0; products.push({ name, price, stock }); saveData(); updateDashboard(); }
+function addFunds() {
+    const target = prompt("Naam van account:");
+    const amount = parseFloat(prompt("Bedrag:")) || 0;
+    const user = users.find(u => u.name === target);
+    if (user) {
+        user.balance += amount;
+        saveData();
+    }
+}
 
-function addFunds() { const target = prompt('Naam van account:'); const amount = parseFloat(prompt('Bedrag:')) || 0; const user = users.find(u => u.name === target); if (user) { user.balance += amount; saveData(); updateDashboard(); } }
+function addProduct() {
+    const name = prompt("Productnaam:");
+    const price = parseFloat(prompt("Prijs:")) || 0;
+    const stock = parseInt(prompt("Voorraad:"), 10) || 0;
+    products.push({ name, price, stock });
+    saveData();
+    renderAdminProducts();
+}
 
-function changeAdminPin() { const newPin = prompt('Nieuwe admin pincode:'); if (newPin) { adminPin = newPin; saveData(); alert('Admin pincode gewijzigd'); } }
+function changeAdminPin() {
+    const newPin = prompt("Nieuwe admin pincode:");
+    if (newPin) {
+        adminPin = newPin;
+        saveData();
+        alert("Admin pincode gewijzigd");
+    }
+}
 
-loadData(); renderAccountList(); </script>
+function logout() {
+    currentUser = null;
+    document.getElementById('userDashboard').classList.add('hidden');
+    document.getElementById('adminDashboard').classList.add('hidden');
+    document.getElementById('homeScreen').classList.remove('hidden');
+    renderHomeScreen();
+}
 
+loadData();
+renderHomeScreen();
+</script>
 </body>
 </html>

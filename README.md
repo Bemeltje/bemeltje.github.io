@@ -51,6 +51,14 @@ header, .container{ position:relative; z-index:1; }
 .pin-wrap { position: relative; display:flex; align-items:center; gap:8px; }
 .pin-toggle { background:#eef7f2; color:var(--brand-green); border:0; border-radius:8px; padding:8px 10px; cursor:pointer; }
 .pin-toggle:active{ transform:translateY(1px); }
+
+/* === Secure modal === */
+.modal-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; z-index:9999; }
+.modal{ background:#fff; border-radius:14px; padding:16px; width:min(420px,92vw); box-shadow:0 10px 30px rgba(0,0,0,.2); }
+.modal h4{ margin:0 0 8px 0; }
+.modal .row{ display:flex; gap:8px; align-items:center; }
+.modal .actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+.modal input[type="password"], .modal input[type="text"]{ width:100%; }
 </style>
 </head>
 <body>
@@ -64,15 +72,26 @@ header, .container{ position:relative; z-index:1; }
 </header>
 
 <!-- HOME -->
-<div class="container" id="homeScreen">
+<div class="container" id="homeScreen" autocomplete="off">
   <h2>Kies je account</h2>
   <div id="accountButtons"></div>
   <hr>
   <div class="item">
     <span>Beheerder inloggen</span>
     <span style="display:flex; gap:6px; align-items:center;">
-      <select id="adminAccountSelect" style="min-width:220px"></select>
-      <input type="password" id="adminCode" placeholder="Pincode" maxlength="4" inputmode="numeric" style="width:120px;">
+      <select id="adminAccountSelect" style="min-width:220px" autocomplete="off"></select>
+      <input
+        type="password"
+        id="adminCode"
+        placeholder="Pincode"
+        maxlength="4"
+        inputmode="numeric"
+        style="width:120px;"
+        autocomplete="new-password"
+        autocapitalize="off"
+        spellcheck="false"
+        readonly
+        >
       <button id="adminLoginBtn">Inloggen</button>
     </span>
   </div>
@@ -80,10 +99,10 @@ header, .container{ position:relative; z-index:1; }
 </div>
 
 <!-- PIN -->
-<div class="container hidden" id="pinScreen">
+<div class="container hidden" id="pinScreen" autocomplete="off">
   <h2>Inloggen</h2>
   <p id="selectedUserName"></p>
-  <input type="password" id="pincode" placeholder="Voer pincode in" maxlength="4" inputmode="numeric">
+  <input type="password" id="pincode" placeholder="Voer pincode in" maxlength="4" inputmode="numeric" autocomplete="new-password" autocapitalize="off" spellcheck="false">
   <button id="userLoginBtn">Inloggen</button>
   <button class="red" id="cancelPinBtn">Annuleren</button>
 </div>
@@ -141,10 +160,10 @@ header, .container{ position:relative; z-index:1; }
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   /* ---- Config ---- */
-  const APP_VERSION = "2025-08-15-hash1";
+  const APP_VERSION = "2025-08-15-hash2";
   let currentManager = null; // {index, role: 'admin'|'coadmin'}
 
-  /* ---- State (kan oude of nieuwe vorm bevatten) ---- */
+  /* ---- State ---- */
   let accounts = safeGet('accounts', [
     {name:"Jan", pin:"1234", saldo:40.00, type:"vast", role:"user"},
     {name:"Piet", pin:"5678", saldo:5.00, type:"gast", role:"user"},
@@ -224,7 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
     logs.push({gebruiker: actorName(), product: `ACTIE: ${text}`, prijs: bedrag, tijd: now()});
   }
 
-  // SHA-256 hashing (Web Crypto)
+  // SHA-256
   async function sha256Hex(str){
     const enc = new TextEncoder().encode(str);
     const buf = await crypto.subtle.digest('SHA-256', enc);
@@ -232,28 +251,77 @@ document.addEventListener('DOMContentLoaded', () => {
     return Array.from(bytes).map(b=>b.toString(16).padStart(2,'0')).join('');
   }
 
-  // Migreer oude plaintext PINs naar pinHash
+  // Secure modal helper voor PIN invoer/wijziging
+  function securePinModal({title="Nieuwe pincode", okText="Opslaan"}){
+    return new Promise(resolve=>{
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop';
+      const modal = document.createElement('div');
+      modal.className = 'modal';
+      modal.innerHTML = `
+        <h4>${title}</h4>
+        <div class="row">
+          <input id="pin1" type="password" placeholder="Pincode (1–4 cijfers)" maxlength="4" inputmode="numeric" autocomplete="new-password" autocapitalize="off" spellcheck="false" style="flex:1;">
+          <button id="toggle1" class="pin-toggle" aria-label="Toon/verberg">👁️</button>
+        </div>
+        <div class="row" style="margin-top:6px;">
+          <input id="pin2" type="password" placeholder="Bevestig pincode" maxlength="4" inputmode="numeric" autocomplete="new-password" autocapitalize="off" spellcheck="false" style="flex:1;">
+          <button id="toggle2" class="pin-toggle" aria-label="Toon/verberg">👁️</button>
+        </div>
+        <div class="actions">
+          <button id="cancel" class="ghost">Annuleren</button>
+          <button id="ok">${okText}</button>
+        </div>
+      `;
+      backdrop.appendChild(modal);
+      document.body.appendChild(backdrop);
+
+      const pin1 = modal.querySelector('#pin1');
+      const pin2 = modal.querySelector('#pin2');
+      const ok = modal.querySelector('#ok');
+      const cancel = modal.querySelector('#cancel');
+      const t1 = modal.querySelector('#toggle1');
+      const t2 = modal.querySelector('#toggle2');
+
+      const enforceDigits = (el)=> el.addEventListener('input', ()=>{ el.value = el.value.replace(/\D+/g,'').slice(0,4); });
+
+      enforceDigits(pin1); enforceDigits(pin2);
+      const toggle = (btn, el)=> btn.addEventListener('click', ()=>{ el.type = el.type==='password'?'text':'password'; });
+
+      toggle(t1, pin1); toggle(t2, pin2);
+
+      function close(val){ document.body.removeChild(backdrop); resolve(val); }
+
+      cancel.addEventListener('click', ()=>close(null));
+      ok.addEventListener('click', ()=>{
+        if (!pin1.value){ alert('Vul een pincode in.'); return; }
+        if (!/^\d{1,4}$/.test(pin1.value)){ alert('Pincode moet 1–4 cijfers zijn.'); return; }
+        if (pin1.value !== pin2.value){ alert('Pincodes komen niet overeen.'); return; }
+        close(pin1.value);
+      });
+
+      backdrop.addEventListener('click', (e)=>{ if (e.target===backdrop) close(null); });
+      pin1.focus();
+    });
+  }
+
+  // Migratie plaintext -> hash
   async function migratePinsIfNeeded(){
     let changed = false;
     for (const acc of accounts){
-      // al nieuwe vorm?
       if (acc.pinHash && !acc.pin) continue;
-
-      // Als er nog 'pin' staat en het lijkt een korte numerieke PIN, hash 'm.
       if (typeof acc.pin === 'string' && /^\d{1,4}$/.test(acc.pin)){
         acc.pinHash = await sha256Hex(acc.pin);
-        delete acc.pin;
-        changed = true;
-      } else if (acc.pin){ // iets anders gevonden -> wegsnijden om geen lek te hebben
+        delete acc.pin; changed = true;
+      } else if (acc.pin){
         acc.pinHash = await sha256Hex(String(acc.pin));
-        delete acc.pin;
-        changed = true;
+        delete acc.pin; changed = true;
       }
     }
     if (changed){ logAction('PINs gemigreerd naar hashes'); saveAll(); }
   }
 
-  /* ---- Home: accounts grid + beheer select ---- */
+  /* ---- UI build ---- */
   function loadAccountButtons(){
     accountButtons.innerHTML = '';
     accounts.forEach((acc, i) => {
@@ -270,7 +338,7 @@ document.addEventListener('DOMContentLoaded', () => {
       accountButtons.appendChild(card);
     });
 
-    // Beheerder-select vullen met alleen admin/coadmin
+    // Beheerder-select vullen met admin/coadmin
     adminAccountSelect.innerHTML = '';
     const staff = accounts.map((a,idx)=>({idx, a})).filter(x=>x.a.role==='admin' || x.a.role==='coadmin');
     if (staff.length===0){
@@ -279,9 +347,16 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       staff.forEach(s=>{
         const opt = document.createElement('option');
-        opt.value = s.idx; opt.text = `${s.a.name} (${s.a.role})`; adminAccountSelect.appendChild(opt);
+        opt.value = s.idx; opt.text = `${s.a.name} (${s.a.role})`;
+        // random name attribuut tegen autofill heuristiek
+        adminCode.setAttribute('name', 'pin_' + Math.random().toString(36).slice(2,8));
+        adminAccountSelect.appendChild(opt);
       });
     }
+
+    // lege, readOnly tot focus (tegen auto-fill)
+    adminCode.value = '';
+    adminCode.addEventListener('focus', ()=> adminCode.removeAttribute('readonly'), {once:true});
   }
   function classifyCard(acc){
     if (acc.type === 'gast') return acc.saldo >= 0 ? 'green' : 'red';
@@ -290,11 +365,11 @@ document.addEventListener('DOMContentLoaded', () => {
     return 'red';
   }
 
-  /* ---- Nav ---- */
   function goHome(){
     hide(pinScreen); hide(userScreen); hide(adminScreen);
     show(homeScreen);
-    adminCode.value = '';
+    adminCode.value = ''; // altijd legen
+    adminCode.setAttribute('readonly',''); // reset anti-autofill
     currentManager = null;
     loadAccountButtons();
   }
@@ -402,7 +477,7 @@ document.addEventListener('DOMContentLoaded', () => {
     alert('Aankoop voltooid.');
   }
 
-  /* ---- Admin login via account met rol ---- */
+  /* ---- Admin login ---- */
   async function adminLogin(){
     const sel = adminAccountSelect.value;
     if (sel === ''){ alert('Kies een beheerder-account.'); return; }
@@ -442,7 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateAdminScreen(){
     adminSections.innerHTML = '';
 
-    // Accounts sectie
+    // Accounts
     const accDiv = document.createElement('div');
     accDiv.innerHTML = `
       <h3>Accounts</h3>
@@ -450,7 +525,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div style="flex:1; min-width:240px;">
           <input id="newName" placeholder="Naam" ${!(isAdmin()||isCoAdmin())?'disabled':''}>
           <div class="pin-wrap">
-            <input id="newPin" type="password" placeholder="Pincode (4 cijfers)" maxlength="4" inputmode="numeric" ${!(isAdmin()||isCoAdmin())?'disabled':''}>
+            <input id="newPin" type="password" placeholder="Pincode (4 cijfers)" maxlength="4" inputmode="numeric" ${!(isAdmin()||isCoAdmin())?'disabled':''} autocomplete="new-password" autocapitalize="off" spellcheck="false">
             <button class="pin-toggle" id="toggleNewPin"${!(isAdmin()||isCoAdmin())?' disabled':''}>👁️</button>
           </div>
           <input type="number" id="newSaldo" placeholder="Startsaldo" ${!(isAdmin()||isCoAdmin())?'disabled':''}>
@@ -472,7 +547,7 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
     adminSections.appendChild(accDiv);
 
-    // Producten sectie
+    // Producten
     const prodDiv = document.createElement('div');
     prodDiv.innerHTML = `
       <h3>Producten</h3>
@@ -543,9 +618,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (newPin) newPin.addEventListener('input', ()=>digitsOnly(newPin));
     const toggleNewPin = adminSections.querySelector('#toggleNewPin');
     if (toggleNewPin && newPin){
-      toggleNewPin.addEventListener('click', ()=>{
-        newPin.type = newPin.type === 'password' ? 'text' : 'password';
-      });
+      toggleNewPin.addEventListener('click', ()=>{ newPin.type = newPin.type === 'password' ? 'text' : 'password'; });
     }
 
     // Buttons wiring
@@ -600,11 +673,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   async function changePin(i){
     if (!isAdmin()) return;
-    const nieuw = prompt(`Nieuwe pincode voor ${accounts[i].name} (max 4 cijfers):`, "");
-    if (nieuw===null) return;
-    if (!/^\d{1,4}$/.test(nieuw)){ alert('Pincode moet 1–4 cijfers zijn.'); return; }
-    accounts[i].pinHash = await sha256Hex(nieuw);
-    if ('pin' in accounts[i]) delete accounts[i].pin; // zeker opruimen
+    const val = await securePinModal({title:`Nieuwe pincode voor ${accounts[i].name}`});
+    if (val===null) return;
+    accounts[i].pinHash = await sha256Hex(val);
+    if ('pin' in accounts[i]) delete accounts[i].pin;
     logAction(`PIN gewijzigd voor ${accounts[i].name}`);
     saveAll(); updateAdminScreen();
     alert('Pincode bijgewerkt.');
@@ -681,7 +753,7 @@ document.addEventListener('DOMContentLoaded', () => {
     logs=[]; saveAll(); updateAdminScreen();
   }
 
-  /* ---- Data import/export/reset (alleen admin) ---- */
+  /* ---- Data import/export/reset ---- */
   function exportAllToJSON(){
     if (!isAdmin()) return;
     const payload = { version: APP_VERSION, exportedAt: new Date().toISOString(), accounts, products, logs };
@@ -702,7 +774,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!data || !Array.isArray(data.accounts) || !Array.isArray(data.products) || !Array.isArray(data.logs)){ alert('Onjuist JSON-formaat.'); return; }
         if (!confirm('Huidige data overschrijven?')) return;
         accounts = data.accounts; products = data.products; logs = data.logs;
-        // na import: migratie afdwingen zodat er geen plaintext pin achterblijft
         await migratePinsIfNeeded();
         logAction('Data geïmporteerd (JSON)');
         saveAll(); loadAccountButtons(); updateAdminScreen(); alert('Data geïmporteerd.');
@@ -726,7 +797,6 @@ document.addEventListener('DOMContentLoaded', () => {
       {name:"Cola",  price:1.00, stock:15}
     ];
     logs = [];
-    // zet standaard pincode hashes (zelfde codes als vroeger)
     (async ()=>{
       accounts[0].pinHash = await sha256Hex("1234");
       accounts[1].pinHash = await sha256Hex("5678");
@@ -767,14 +837,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (watermark) watermark.style.display='none';
   });
 
-  // Init: eerst migreren, dán UI renderen
+  // Init
   (async ()=>{
     await migratePinsIfNeeded();
-    // Voor demo/legacy: zorg dat standaard-accounts een hash hebben als nieuw project
     if (accounts.some(a => !a.pinHash)){
       for (const a of accounts){
         if (!a.pinHash){
-          // kies een simpele default als er echt niets is (niet ideaal, maar zorgt dat project start)
           a.pinHash = await sha256Hex("0000");
         }
       }

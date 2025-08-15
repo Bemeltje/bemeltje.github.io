@@ -302,4 +302,300 @@ document.addEventListener('DOMContentLoaded', () => {
     if (acc.type==='vast' && acc.saldo - total < -10){ alert('Vast mag niet verder dan -€10 komen!'); return; }
 
     // Voorraad check
-    fo
+    for (const i of Object.keys(cart)){
+      const qty = cart[i]||0;
+      if (qty > products[i].stock){
+        alert(`Niet genoeg voorraad voor ${products[i].name}`);
+        return;
+      }
+    }
+
+    // Bevestiging met totaal
+    if (!confirm(`Je staat op het punt te kopen voor €${formatPrice(total)} (${items} item(s)). Doorgaan?`)) return;
+
+    // Afrekenen
+    acc.saldo -= total;
+    Object.keys(cart).forEach(i=>{
+      const qty = cart[i]||0;
+      if (qty>0){
+        products[i].stock -= qty;
+        logs.push({gebruiker:acc.name, product:`${products[i].name} (x${qty})`, prijs: products[i].price*qty, tijd:new Date().toLocaleString()});
+        cart[i]=0;
+      }
+    });
+
+    saveAll();
+    updateUserScreen();
+    loadAccountButtons();
+    alert('Aankoop voltooid.');
+  }
+
+  /* ---- Admin login ---- */
+  function adminLogin(){
+    const pin = adminCode.value;
+    if (pin === ADMIN_PIN){ isCoAdmin=false; }
+    else if (pin === COADMIN_PIN){ isCoAdmin=true; }
+    else { alert('Verkeerde pincode!'); return; }
+    adminCode.value = '';
+    hide(homeScreen); show(adminScreen);
+    adminTitle.textContent = isCoAdmin ? 'Co-Admin Paneel' : 'Admin Paneel';
+    updateAdminScreen();
+    // Alleen admin mag export/import/reset en log-acties
+    if (isCoAdmin){
+      hide(dataBeheer);
+      // co-admin: geen CSV export / geen logs wissen
+      logActions.querySelectorAll('button').forEach(b=>b.disabled = true);
+    } else {
+      show(dataBeheer);
+      logActions.querySelectorAll('button').forEach(b=>b.disabled = false);
+    }
+  }
+
+  /* ---- Admin screen ---- */
+  function updateAdminScreen(){
+    adminSections.innerHTML = '';
+
+    // Accounts sectie
+    const accDiv = document.createElement('div');
+    accDiv.innerHTML = `
+      <h3>Accounts</h3>
+      <div class="item">
+        <div style="flex:1; min-width:220px;">
+          <input id="newName" placeholder="Naam" ${isCoAdmin?'disabled':''}>
+          <input id="newPin" placeholder="Pincode (4 cijfers)" maxlength="4" inputmode="numeric" ${isCoAdmin?'disabled':''}>
+          <input type="number" id="newSaldo" placeholder="Startsaldo" ${isCoAdmin?'disabled':''}>
+          <select id="newType" ${isCoAdmin?'disabled':''}>
+            <option value="gast">Gast</option>
+            <option value="vast">Vast</option>
+          </select>
+        </div>
+        <div>
+          ${isCoAdmin?'':'<button id="addAccountBtn">Account toevoegen</button>'}
+        </div>
+      </div>
+      <div id="accountList"></div>
+    `;
+    adminSections.appendChild(accDiv);
+
+    // Producten sectie (alleen admin voor wijzigen/aanmaken)
+    const prodDiv = document.createElement('div');
+    prodDiv.innerHTML = `
+      <h3>Producten</h3>
+      ${isCoAdmin ? '' : `
+      <div class="item">
+        <div style="flex:1; min-width:220px;">
+          <input id="prodName" placeholder="Productnaam">
+          <input type="number" step="0.01" id="prodPrice" placeholder="Prijs">
+          <input type="number" id="prodStock" placeholder="Voorraad">
+        </div>
+        <div>
+          <button id="addProductBtn">Product toevoegen</button>
+        </div>
+      </div>`}
+      <div id="productAdminList"></div>
+    `;
+    adminSections.appendChild(prodDiv);
+
+    // Accounts lijst
+    const accountList = accDiv.querySelector('#accountList');
+    accountList.innerHTML = '';
+    accounts.forEach((acc,i)=>{
+      const row = document.createElement('div');
+      row.className = 'item';
+      row.innerHTML = `
+        <span>${acc.name} (€${formatPrice(acc.saldo)}) ${acc.type==='gast'?'[gast]':''}</span>
+        <span>
+          ${isCoAdmin ? '' : `<button data-pin="${i}">PIN wijzigen</button>`}
+          <button data-add="${i}">+€</button>
+          ${isCoAdmin ? '' : `<button class="red" data-del="${i}">X</button>`}
+        </span>
+      `;
+      accountList.appendChild(row);
+    });
+
+    // Producten lijst
+    const prodList = prodDiv.querySelector('#productAdminList');
+    prodList.innerHTML = '';
+    products.forEach((p,i)=>{
+      const voorraadClass = p.stock <=5 ? 'low-stock' : '';
+      const row = document.createElement('div');
+      row.className='item';
+      row.innerHTML = `
+        <span>${p.name} (€${formatPrice(p.price)}) - <span class="${voorraadClass}">Voorraad: ${p.stock}</span></span>
+        <span>
+          ${isCoAdmin ? '' : `<button data-restock="${i}">Voorraad bijvullen</button>`}
+          ${isCoAdmin ? '' : `<button class="red" data-pdel="${i}">X</button>`}
+        </span>
+      `;
+      prodList.appendChild(row);
+    });
+
+    // Logboek
+    let html = '<table><tr><th>Gebruiker</th><th>Product</th><th>Prijs</th><th>Tijd</th></tr>';
+    logs.forEach(l=>{ html += `<tr><td>${l.gebruiker}</td><td>${l.product}</td><td>€${formatPrice(l.prijs)}</td><td>${l.tijd}</td></tr>`; });
+    html += '</table>';
+    logList.innerHTML = html;
+
+    // pin-only digits
+    const newPin = adminSections.querySelector('#newPin');
+    if (newPin) newPin.addEventListener('input', ()=>digitsOnly(newPin));
+
+    // Buttons wiring
+    const addAccountBtn = adminSections.querySelector('#addAccountBtn');
+    if (addAccountBtn) addAccountBtn.addEventListener('click', addAccount);
+    adminSections.querySelectorAll('button[data-del]').forEach(btn=>btn.addEventListener('click',()=>deleteAccount(+btn.dataset.del)));
+    adminSections.querySelectorAll('button[data-add]').forEach(btn=>btn.addEventListener('click',()=>addSaldo(+btn.dataset.add)));
+    adminSections.querySelectorAll('button[data-pin]').forEach(btn=>btn.addEventListener('click',()=>changePin(+btn.dataset.pin)));
+    const addProductBtn = adminSections.querySelector('#addProductBtn');
+    if (addProductBtn) addProductBtn.addEventListener('click', addProduct);
+    adminSections.querySelectorAll('button[data-pdel]').forEach(btn=>btn.addEventListener('click',()=>deleteProduct(+btn.dataset.pdel)));
+    adminSections.querySelectorAll('button[data-restock]').forEach(btn=>btn.addEventListener('click',()=>restockProduct(+btn.dataset.restock)));
+  }
+
+  /* ---- Admin actions ---- */
+  function addAccount(){
+    const name = document.getElementById('newName').value.trim();
+    const pin = document.getElementById('newPin').value.trim();
+    const saldo = parseFloat(document.getElementById('newSaldo').value);
+    const type = document.getElementById('newType').value;
+    if (!name || !pin || isNaN(saldo)){ alert('Vul alle velden in!'); return; }
+    if (!/^\d{1,4}$/.test(pin)){ alert('Pincode moet 1–4 cijfers zijn.'); return; }
+    accounts.push({name, pin, saldo, type});
+    saveAll(); loadAccountButtons(); updateAdminScreen();
+    document.getElementById('newName').value='';
+    document.getElementById('newPin').value='';
+    document.getElementById('newSaldo').value='';
+    document.getElementById('newType').value='gast';
+  }
+  function deleteAccount(i){
+    if (isCoAdmin) return;
+    if (!confirm(`Account "${accounts[i].name}" verwijderen?`)) return;
+    accounts.splice(i,1);
+    saveAll(); loadAccountButtons(); updateAdminScreen();
+  }
+  function addSaldo(i){
+    const bedrag = parseFloat(prompt('Bedrag toevoegen:'));
+    if (isNaN(bedrag)) return;
+    accounts[i].saldo += bedrag;
+    saveAll(); loadAccountButtons(); updateAdminScreen();
+  }
+  function changePin(i){
+    if (isCoAdmin) return;
+    const nieuw = prompt(`Nieuwe pincode voor ${accounts[i].name} (max 4 cijfers):`, "");
+    if (nieuw===null) return;
+    if (!/^\d{1,4}$/.test(nieuw)){ alert('Pincode moet 1–4 cijfers zijn.'); return; }
+    accounts[i].pin = nieuw;
+    saveAll(); updateAdminScreen();
+    alert('Pincode bijgewerkt.');
+  }
+  function addProduct(){
+    if (isCoAdmin) return;
+    const name = document.getElementById('prodName').value.trim();
+    const price = parseFloat(document.getElementById('prodPrice').value);
+    const stock = parseInt(document.getElementById('prodStock').value);
+    if (!name || isNaN(price) || isNaN(stock)){ alert('Vul alle velden in!'); return; }
+    products.push({name, price, stock});
+    saveAll(); updateAdminScreen();
+    document.getElementById('prodName').value='';
+    document.getElementById('prodPrice').value='';
+    document.getElementById('prodStock').value='';
+  }
+  function deleteProduct(i){
+    if (isCoAdmin) return;
+    if (!confirm(`Product "${products[i].name}" verwijderen?`)) return;
+    products.splice(i,1);
+    saveAll(); updateAdminScreen();
+  }
+  function restockProduct(i){
+    if (isCoAdmin) return;
+    const add = parseInt(prompt(`Aantal bijvullen voor "${products[i].name}" (huidig: ${products[i].stock})`, "0"));
+    if (isNaN(add)) return;
+    products[i].stock = Math.max(0, products[i].stock + add);
+    saveAll(); updateAdminScreen();
+  }
+
+  /* ---- Logs ---- */
+  function exportLogsToCSV(){
+    if (isCoAdmin) return; // alleen admin
+    if (logs.length===0){ alert('Het logboek is leeg.'); return; }
+    const csv = "Gebruiker,Product,Prijs,Tijd\n" + logs.map(l=>`${l.gebruiker},${l.product},${formatPrice(l.prijs)},${l.tijd}`).join('\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download='logboek.csv'; document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  }
+  function clearLogs(){
+    if (isCoAdmin) return; // alleen admin
+    if (!confirm('Logboek wissen?')) return;
+    logs=[]; saveAll(); updateAdminScreen();
+  }
+
+  /* ---- Data import/export/reset (alleen admin) ---- */
+  function exportAllToJSON(){
+    if (isCoAdmin) return;
+    const payload = { version: APP_VERSION, exportedAt: new Date().toISOString(), accounts, products, logs };
+    const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download='fictief-geld-data.json'; document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  }
+  function importAllFromJSON(file){
+    if (isCoAdmin) return;
+    if (!file) return;
+    const r = new FileReader();
+    r.onload = e=>{
+      try{
+        const data = JSON.parse(e.target.result);
+        if (!data || !Array.isArray(data.accounts) || !Array.isArray(data.products) || !Array.isArray(data.logs)){ alert('Onjuist JSON-formaat.'); return; }
+        if (!confirm('Huidige data overschrijven?')) return;
+        accounts = data.accounts; products = data.products; logs = data.logs;
+        saveAll(); loadAccountButtons(); updateAdminScreen(); alert('Data geïmporteerd.');
+      }catch(err){ alert('Kon JSON niet lezen: '+err.message); }
+      importFile.value='';
+    };
+    r.readAsText(file);
+  }
+  function resetAllData(){
+    if (isCoAdmin) return;
+    if (!confirm('Alle data herstellen naar standaard?')) return;
+    accounts = [
+      {name:"Jan", pin:"1234", saldo:10.00, type:"vast"},
+      {name:"Piet", pin:"5678", saldo:5.00, type:"gast"}
+    ];
+    products = [
+      {name:"Chips", price:0.75, stock:20},
+      {name:"Bier",  price:0.75, stock:30},
+      {name:"Cola",  price:1.00, stock:15}
+    ];
+    logs = [];
+    saveAll(); loadAccountButtons(); updateAdminScreen(); alert('Hersteld.');
+  }
+
+  /* ---- Wire up ---- */
+  adminLoginBtn.addEventListener('click', adminLogin);
+  userLoginBtn.addEventListener('click', checkLogin);
+  cancelPinBtn.addEventListener('click', goHome);
+  logoutUserBtn.addEventListener('click', goHome);
+  logoutAdminBtn.addEventListener('click', goHome);
+
+  adminCode.addEventListener('input', ()=>digitsOnly(adminCode));
+  pincode.addEventListener('input', ()=>digitsOnly(pincode));
+
+  // User cart buttons
+  checkoutBtn.addEventListener('click', checkoutCart);
+  clearCartBtn.addEventListener('click', () => { initCart(); updateUserScreen(); });
+
+  // Admin: logs + data beheer
+  exportCsvBtn.addEventListener('click', exportLogsToCSV);
+  clearLogsBtn.addEventListener('click', clearLogs);
+  exportJsonBtn.addEventListener('click', exportAllToJSON);
+  importJsonBtn.addEventListener('click', ()=>importFile.click());
+  importFile.addEventListener('change', ()=>importAllFromJSON(importFile.files[0]));
+  resetBtn.addEventListener('click', resetAllData);
+
+  // Start
+  loadAccountButtons();
+});
+</script>
+</body>
+</html>

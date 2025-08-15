@@ -1056,7 +1056,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <input id="newPin" type="password" placeholder="Pincode (exact 4 cijfers)" maxlength="4" inputmode="numeric" ${!(isAdmin() || isCoAdmin()) ? 'disabled' : ''} autocomplete="new-password" autocapitalize="off" spellcheck="false">
             <button class="pin-toggle" id="toggleNewPin" ${!(isAdmin() || isCoAdmin()) ? 'disabled' : ''}>👁️</button>
           </div>
-          <input type="number" id="newSaldo" placeholder="Startsaldo" ${!(isAdmin() || isCoAdmin()) ? 'disabled' : ''}>
+          <input type="number" id="newSaldo" placeholder="0" ${!(isAdmin() || isCoAdmin()) ? 'disabled' : ''}>
           <label class="small" title="Markeer als gastaccount (mag niet onder €0)"><input type="checkbox" id="newIsGuest" ${!(isAdmin() || isCoAdmin()) ? 'disabled' : ''}> <strong>Gastaccount</strong></label>
           <select id="newRole" ${!isAdmin() ? 'disabled' : ''}>
             <option value="user">Rol: Gebruiker</option>

@@ -415,12 +415,13 @@ document.addEventListener('DOMContentLoaded', () => {
   /* ---- Config ---- */
   const APP_VERSION = "2025-08-15-wide-rename-pin4-v5";
   const MAX_USERS = 50;
-  const ADMIN_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
+  const ADMIN_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
   const ADMIN_LOCK_MAX_FAILS = 5;
   const ADMIN_LOCK_DURATION_MS = 2 * 60 * 1000;
 
   let currentManager = null; // {index, role:'admin'|'coadmin'}
   let lastAdminActionAt = Date.now();
+  let adminIntervalId = null; // Nieuwe variabele om de timer bij te houden
 
   /* ---- State ---- */
   let accounts = safeGet('accounts', [
@@ -801,6 +802,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function goHome() {
+    if (adminIntervalId) {
+      clearInterval(adminIntervalId);
+      adminIntervalId = null;
+    }
     hide(pinScreen);
     hide(userScreen);
     hide(adminScreen);
@@ -1001,6 +1006,26 @@ document.addEventListener('DOMContentLoaded', () => {
     updateAdminScreen();
     applyPermissions();
     touchAdminActivity();
+    startAdminInterval(); // Start de timer na succesvol inloggen
+  }
+  
+  function startAdminInterval() {
+    // Stop de oude timer voordat een nieuwe wordt gestart
+    if (adminIntervalId) {
+      clearInterval(adminIntervalId);
+    }
+    // Start de nieuwe timer
+    adminIntervalId = setInterval(async () => {
+      if (!currentManager) return;
+      if (Date.now() - lastAdminActionAt > ADMIN_IDLE_TIMEOUT_MS) {
+        clearInterval(adminIntervalId); // Stop de timer onmiddellijk
+        adminIntervalId = null;
+        await showModal({ title: 'Sessie verlopen', message: 'Vanwege inactiviteit ben je uitgelogd uit het adminpaneel.' });
+        logAction('Beheer auto-uitlog (inactiviteit)');
+        saveAll();
+        goHome(); // Navigeer naar het homescherm, dit zal de timer ook stoppen mocht deze nog lopen
+      }
+    }, 15 * 1000);
   }
 
   function isAdmin() {
@@ -1030,15 +1055,6 @@ document.addEventListener('DOMContentLoaded', () => {
   function touchAdminActivity() {
     lastAdminActionAt = Date.now();
   }
-  setInterval(async () => {
-    if (!currentManager) return;
-    if (Date.now() - lastAdminActionAt > ADMIN_IDLE_TIMEOUT_MS) {
-      await showModal({ title: 'Sessie verlopen', message: 'Vanwege inactiviteit ben je uitgelogd uit het adminpaneel.' });
-      logAction('Beheer auto-uitlog (inactiviteit)');
-      saveAll();
-      goHome();
-    }
-  }, 15 * 1000);
   document.addEventListener('click', () => {
     if (!adminScreen.classList.contains('hidden')) touchAdminActivity();
   });

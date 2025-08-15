@@ -5,39 +5,62 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Fictief Geld Systeem</title>
 <style>
-body { font-family: 'Segoe UI', Arial, sans-serif; background: linear-gradient(135deg,#f7f9fb,#e4ebf1); margin:0; color:#333; }
-header { background:#2b7cd3; color:#fff; padding:15px; text-align:center; font-size:1.6em; box-shadow:0 2px 6px rgba(0,0,0,.2); letter-spacing:1px; }
-.container { max-width:1200px; margin:20px auto; background:#fff; padding:20px; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,.08); }
+:root{
+  --brand-red:#d62828;        /* uit logo */
+  --brand-green:#1c7c54;      /* uit logo */
+  --brand-cream:#ffffff;
+  --text:#333;
+  --muted:#666;
+}
+body { font-family: 'Segoe UI', Arial, sans-serif; background: linear-gradient(135deg, rgba(28,124,84,.07), rgba(214,40,40,.06)); margin:0; color:var(--text); position:relative; }
+header { background: linear-gradient(90deg, var(--brand-green), var(--brand-red)); color:#fff; padding:14px 18px; display:flex; align-items:center; gap:12px; box-shadow:0 2px 6px rgba(0,0,0,.2); }
+header img.logo { width:42px; height:42px; object-fit:contain; filter: drop-shadow(0 1px 2px rgba(0,0,0,.2)); background:#fff; border-radius:50%; padding:4px; }
+header .title { display:flex; flex-direction:column; line-height:1.15; }
+header .title strong { font-size:1.15rem; letter-spacing:.3px; }
+header .title span { font-size:.8rem; opacity:.95; }
+.container { max-width:1200px; margin:20px auto; background:#fff; padding:20px; border-radius:12px; box-shadow:0 6px 18px rgba(0,0,0,.08); }
 h2,h3 { margin-top:0; }
-button { padding:8px 14px; border:0; background:#2b7cd3; color:#fff; border-radius:6px; cursor:pointer; margin:3px; font-size:.95em; transition:background .3s, transform .1s; }
-button:hover { background:#1f65ac; transform:scale(1.03); }
-button.red { background:#d64545; } button.red:hover{ background:#b53333; }
-button.ghost { background:#eef4fb; color:#1f65ac; }
-input,select { padding:9px; margin:5px 0; width:100%; border:1px solid #ccc; border-radius:5px; font-size:.95em; }
+button { padding:8px 14px; border:0; background:var(--brand-green); color:#fff; border-radius:8px; cursor:pointer; margin:3px; font-size:.95em; transition:filter .15s, transform .05s; }
+button:hover { filter:brightness(.95); transform:translateY(-1px); }
+button.red { background:var(--brand-red); }
+button.red:hover{ filter:brightness(.95); }
+button.ghost { background:#eef7f2; color:var(--brand-green); }
+input,select { padding:9px; margin:5px 0; width:100%; border:1px solid #dfe3e8; border-radius:8px; font-size:.95em; }
 .hidden { display:none; }
-.item { border-bottom:1px solid #eee; padding:8px 0; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+.item { border-bottom:1px solid #f1f3f5; padding:8px 0; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
 .item:last-child{ border-bottom:none; }
-.badge { background:#f39c12; color:#fff; padding:2px 6px; font-size:.8em; border-radius:4px; margin-left:5px; }
-.badge.admin { background:#2b7cd3; }
-.badge.coadmin { background:#27ae60; }
+.badge { background:#f39c12; color:#fff; padding:2px 6px; font-size:.8em; border-radius:6px; margin-left:5px; }
+.badge.admin { background:var(--brand-red); }
+.badge.coadmin { background:var(--brand-green); }
 #accountButtons { display:grid; grid-template-columns:repeat(auto-fill, minmax(250px,1fr)); gap:12px; }
-.account-card { background:#fff; border-radius:8px; padding:12px; box-shadow:0 2px 8px rgba(0,0,0,.05); display:flex; flex-direction:column; align-items:flex-start; border-left:5px solid transparent; transition:transform .1s; }
+.account-card { background:#fff; border-radius:12px; padding:12px; box-shadow:0 2px 8px rgba(0,0,0,.05); display:flex; flex-direction:column; align-items:flex-start; border-left:5px solid transparent; transition:transform .1s; }
 .account-card:hover{ transform:translateY(-2px); }
-.account-card.green{ border-left-color:#27ae60; }
+.account-card.green{ border-left-color:var(--brand-green); }
 .account-card.orange{ border-left-color:#f39c12; }
-.account-card.red{ border-left-color:#d64545; }
+.account-card.red{ border-left-color:var(--brand-red); }
 .account-card strong{ font-size:1.1em; }
 table { width:100%; border-collapse:collapse; font-size:.9em; margin-top:10px; }
-th,td { border:1px solid #ddd; padding:6px; text-align:left; }
-th{ background:#f4f4f4; }
-.low-stock{ color:red; font-weight:bold; }
-.small{ font-size:.85em; color:#666; }
-.cart-summary { margin-top:10px; padding:10px; background:#f7fbff; border:1px solid #dfeaf7; border-radius:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+th,td { border:1px solid #eceff1; padding:6px; text-align:left; }
+th{ background:#f8fafb; }
+.low-stock{ color:var(--brand-red); font-weight:bold; }
+.small{ font-size:.85em; color:var(--muted); }
+.cart-summary { margin-top:10px; padding:10px; background:#f7fbff; border:1px solid #dfeaf7; border-radius:12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
 .cart-summary strong { font-size:1.05em; }
+/* Watermark van logo */
+.watermark{ position:fixed; inset:0; pointer-events:none; background: url('logo.png') no-repeat right 40px top 40px; background-size: 320px auto; opacity:.06; z-index:0; }
+/* zorg dat inhoud boven watermark staat */
+header, .container{ position:relative; z-index:1; }
 </style>
 </head>
 <body>
-<header>💰 Fictief Geld Systeem</header>
+<div class="watermark"></div>
+<header>
+  <img class="logo" src="logo.png" alt="Logo Waterscouting">
+  <div class="title">
+    <strong>Fictief Geld Systeem</strong>
+    <span>Waterscouting St. Willibrordus · Gouda</span>
+  </div>
+</header>
 
 <!-- HOME -->
 <div class="container" id="homeScreen">

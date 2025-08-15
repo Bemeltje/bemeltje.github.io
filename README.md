@@ -6,8 +6,8 @@
 <title>Fictief Geld Systeem</title>
 <style>
 :root{
-  --brand-red:#d62828;        /* uit logo */
-  --brand-green:#1c7c54;      /* uit logo */
+  --brand-red:#d62828;
+  --brand-green:#1c7c54;
   --brand-cream:#ffffff;
   --text:#333;
   --muted:#666;
@@ -46,10 +46,11 @@ th{ background:#f8fafb; }
 .small{ font-size:.85em; color:var(--muted); }
 .cart-summary { margin-top:10px; padding:10px; background:#f7fbff; border:1px solid #dfeaf7; border-radius:12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
 .cart-summary strong { font-size:1.05em; }
-/* Watermark van logo */
 .watermark{ position:fixed; inset:0; pointer-events:none; background: url('logo.png') no-repeat right 40px top 40px; background-size: 320px auto; opacity:.06; z-index:0; }
-/* zorg dat inhoud boven watermark staat */
 header, .container{ position:relative; z-index:1; }
+.pin-wrap { position: relative; display:flex; align-items:center; gap:8px; }
+.pin-toggle { background:#eef7f2; color:var(--brand-green); border:0; border-radius:8px; padding:8px 10px; cursor:pointer; }
+.pin-toggle:active{ transform:translateY(1px); }
 </style>
 </head>
 <body>
@@ -75,7 +76,7 @@ header, .container{ position:relative; z-index:1; }
       <button id="adminLoginBtn">Inloggen</button>
     </span>
   </div>
-  <p class="small">Tip: Rollen worden toegekend per account. Alleen accounts met rol <strong>Admin</strong> of <strong>Co‑admin</strong> kunnen inloggen op het beheer.</p>
+  <p class="small">Tip: Alleen accounts met rol <strong>Admin</strong> of <strong>Co-admin</strong> kunnen inloggen op het beheer.</p>
 </div>
 
 <!-- PIN -->
@@ -140,10 +141,10 @@ header, .container{ position:relative; z-index:1; }
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   /* ---- Config ---- */
-  const APP_VERSION = "2025-08-15";
+  const APP_VERSION = "2025-08-15-hash1";
   let currentManager = null; // {index, role: 'admin'|'coadmin'}
 
-  /* ---- State ---- */
+  /* ---- State (kan oude of nieuwe vorm bevatten) ---- */
   let accounts = safeGet('accounts', [
     {name:"Jan", pin:"1234", saldo:40.00, type:"vast", role:"user"},
     {name:"Piet", pin:"5678", saldo:5.00, type:"gast", role:"user"},
@@ -194,7 +195,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const importFile = document.getElementById('importFile');
   const resetBtn = document.getElementById('resetBtn');
   const logoutAdminBtn = document.getElementById('logoutAdminBtn');
-  const logActions = document.getElementById('logActions');
 
   /* ---- Utils ---- */
   function saveAll() {
@@ -222,6 +222,35 @@ document.addEventListener('DOMContentLoaded', () => {
   function actorName(){ return currentManager ? accounts[currentManager.index].name : 'SYSTEEM'; }
   function logAction(text, bedrag=0){
     logs.push({gebruiker: actorName(), product: `ACTIE: ${text}`, prijs: bedrag, tijd: now()});
+  }
+
+  // SHA-256 hashing (Web Crypto)
+  async function sha256Hex(str){
+    const enc = new TextEncoder().encode(str);
+    const buf = await crypto.subtle.digest('SHA-256', enc);
+    const bytes = new Uint8Array(buf);
+    return Array.from(bytes).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }
+
+  // Migreer oude plaintext PINs naar pinHash
+  async function migratePinsIfNeeded(){
+    let changed = false;
+    for (const acc of accounts){
+      // al nieuwe vorm?
+      if (acc.pinHash && !acc.pin) continue;
+
+      // Als er nog 'pin' staat en het lijkt een korte numerieke PIN, hash 'm.
+      if (typeof acc.pin === 'string' && /^\d{1,4}$/.test(acc.pin)){
+        acc.pinHash = await sha256Hex(acc.pin);
+        delete acc.pin;
+        changed = true;
+      } else if (acc.pin){ // iets anders gevonden -> wegsnijden om geen lek te hebben
+        acc.pinHash = await sha256Hex(String(acc.pin));
+        delete acc.pin;
+        changed = true;
+      }
+    }
+    if (changed){ logAction('PINs gemigreerd naar hashes'); saveAll(); }
   }
 
   /* ---- Home: accounts grid + beheer select ---- */
@@ -277,12 +306,14 @@ document.addEventListener('DOMContentLoaded', () => {
     pincode.value = '';
     hide(homeScreen); show(pinScreen);
   }
-  function checkLogin(){
+  async function checkLogin(){
     if (!pincode.value){ alert('Voer pincode in'); return; }
-    if (accounts[currentUserIndex].pin === pincode.value){
+    const acc = accounts[currentUserIndex];
+    const inputHash = await sha256Hex(pincode.value);
+    if (acc.pinHash === inputHash){
       pincode.value = '';
       hide(pinScreen); show(userScreen);
-      welcome.textContent = 'Welkom ' + accounts[currentUserIndex].name;
+      welcome.textContent = 'Welkom ' + acc.name;
       initCart();
       updateUserScreen();
     } else {
@@ -323,7 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
       row.innerHTML = `
         <span>${p.name} - €${formatPrice(p.price)} (<span class="${voorraadClass}">voorraad: ${p.stock}</span>)</span>
         <span>
-          <input type="number" min="0" max="${p.stock}" value="${cart[i]||0}" style="width:80px;">
+          <input type="number" step="1" inputmode="numeric" min="0" max="${p.stock}" value="${cart[i]||0}" style="width:80px;">
         </span>
       `;
       const input = row.querySelector('input');
@@ -342,11 +373,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const {total, items} = computeCart();
     if (items === 0){ alert('Je hebt niets geselecteerd.'); return; }
 
-    // Limieten check
     if (acc.type==='gast' && acc.saldo - total < 0){ alert('Gast mag niet onder €0 komen!'); return; }
     if (acc.type==='vast' && acc.saldo - total < -10){ alert('Vast mag niet verder dan -€10 komen!'); return; }
 
-    // Voorraad check
     for (const i of Object.keys(cart)){
       const qty = cart[i]||0;
       if (qty > products[i].stock){
@@ -355,10 +384,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // Bevestiging met totaal
     if (!confirm(`Je staat op het punt te kopen voor €${formatPrice(total)} (${items} item(s)). Doorgaan?`)) return;
 
-    // Afrekenen
     acc.saldo -= total;
     Object.keys(cart).forEach(i=>{
       const qty = cart[i]||0;
@@ -376,31 +403,34 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /* ---- Admin login via account met rol ---- */
-  function adminLogin(){
+  async function adminLogin(){
     const sel = adminAccountSelect.value;
     if (sel === ''){ alert('Kies een beheerder-account.'); return; }
     const idx = parseInt(sel);
     const acc = accounts[idx];
     if (!acc || (acc.role!=='admin' && acc.role!=='coadmin')){ alert('Geen beheerdersrol.'); return; }
-    if (adminCode.value !== acc.pin){ alert('Verkeerde pincode!'); return; }
+
+    const inputHash = await sha256Hex(adminCode.value || '');
+    if (acc.pinHash !== inputHash){
+      alert('Verkeerde pincode!');
+      logAction(`MISLUKTE beheerlogin voor ${acc.name}`);
+      saveAll();
+      return;
+    }
     currentManager = { index: idx, role: acc.role };
     adminCode.value = '';
     hide(homeScreen); show(adminScreen);
     adminTitle.textContent = acc.role === 'coadmin' ? 'Co-Admin Paneel' : 'Admin Paneel';
+    logAction(`Beheerlogin als ${acc.role} (${acc.name})`);
+    saveAll();
     updateAdminScreen();
     applyPermissions();
   }
   function isAdmin(){ return currentManager && currentManager.role==='admin'; }
   function isCoAdmin(){ return currentManager && currentManager.role==='coadmin'; }
   function applyPermissions(){
-    // Data beheer alleen voor admin
-    if (isAdmin()){
-      show(dataBeheer);
-    } else {
-      hide(dataBeheer);
-    }
-    // Log-acties: co-admin mag exporteren, NIET wissen
-    exportCsvBtn.disabled = false; // beide mogen exporteren
+    if (isAdmin()){ show(dataBeheer); } else { hide(dataBeheer); }
+    if (exportCsvBtn) exportCsvBtn.disabled = false; // beide mogen exporteren
     if (isAdmin()){
       clearLogsBtn.disabled = false; clearLogsBtn.classList.remove('hidden');
     } else {
@@ -419,7 +449,10 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="item">
         <div style="flex:1; min-width:240px;">
           <input id="newName" placeholder="Naam" ${!(isAdmin()||isCoAdmin())?'disabled':''}>
-          <input id="newPin" placeholder="Pincode (4 cijfers)" maxlength="4" inputmode="numeric" ${!(isAdmin()||isCoAdmin())?'disabled':''}>
+          <div class="pin-wrap">
+            <input id="newPin" type="password" placeholder="Pincode (4 cijfers)" maxlength="4" inputmode="numeric" ${!(isAdmin()||isCoAdmin())?'disabled':''}>
+            <button class="pin-toggle" id="toggleNewPin"${!(isAdmin()||isCoAdmin())?' disabled':''}>👁️</button>
+          </div>
           <input type="number" id="newSaldo" placeholder="Startsaldo" ${!(isAdmin()||isCoAdmin())?'disabled':''}>
           <select id="newType" ${!(isAdmin()||isCoAdmin())?'disabled':''}>
             <option value="gast">Gast</option>
@@ -508,10 +541,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // wire inputs
     const newPin = adminSections.querySelector('#newPin');
     if (newPin) newPin.addEventListener('input', ()=>digitsOnly(newPin));
+    const toggleNewPin = adminSections.querySelector('#toggleNewPin');
+    if (toggleNewPin && newPin){
+      toggleNewPin.addEventListener('click', ()=>{
+        newPin.type = newPin.type === 'password' ? 'text' : 'password';
+      });
+    }
 
     // Buttons wiring
     const addAccountBtn = adminSections.querySelector('#addAccountBtn');
-    if (addAccountBtn) addAccountBtn.addEventListener('click', addAccount);
+    if (addAccountBtn) addAccountBtn.addEventListener('click', ()=>addAccount());
     adminSections.querySelectorAll('button[data-del]').forEach(btn=>btn.addEventListener('click',()=>deleteAccount(+btn.dataset.del)));
     adminSections.querySelectorAll('button[data-add]').forEach(btn=>btn.addEventListener('click',()=>addSaldo(+btn.dataset.add)));
     adminSections.querySelectorAll('button[data-pin]').forEach(btn=>btn.addEventListener('click',()=>changePin(+btn.dataset.pin)));
@@ -524,17 +563,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /* ---- Admin actions ---- */
-  function addAccount(){
+  async function addAccount(){
     if (!(isAdmin()||isCoAdmin())) return;
     const name = document.getElementById('newName').value.trim();
     const pin = document.getElementById('newPin').value.trim();
     const saldo = parseFloat(document.getElementById('newSaldo').value);
     const type = document.getElementById('newType').value;
     const roleSelect = document.getElementById('newRole');
-    const role = isAdmin() ? roleSelect.value : 'user'; // co-admin kan geen rol kiezen
+    const role = isAdmin() ? roleSelect.value : 'user';
     if (!name || !pin || isNaN(saldo)){ alert('Vul alle velden in!'); return; }
     if (!/^\d{1,4}$/.test(pin)){ alert('Pincode moet 1–4 cijfers zijn.'); return; }
-    accounts.push({name, pin, saldo, type, role});
+    const pinHash = await sha256Hex(pin);
+    accounts.push({name, pinHash, saldo, type, role});
     logAction(`Account aangemaakt: ${name} (rol: ${role})`);
     saveAll(); loadAccountButtons(); updateAdminScreen();
     document.getElementById('newName').value='';
@@ -551,18 +591,20 @@ document.addEventListener('DOMContentLoaded', () => {
     saveAll(); loadAccountButtons(); updateAdminScreen();
   }
   function addSaldo(i){
-    const bedrag = parseFloat(prompt('Bedrag toevoegen:'));
-    if (isNaN(bedrag)) return;
+    const invoer = prompt('Bedrag toevoegen (positief getal):');
+    const bedrag = parseFloat(invoer);
+    if (!isFinite(bedrag) || bedrag <= 0){ alert('Voer een positief getal in.'); return; }
     accounts[i].saldo += bedrag;
     logAction(`Saldo +€${formatPrice(bedrag)} voor ${accounts[i].name}`, bedrag);
     saveAll(); loadAccountButtons(); updateAdminScreen();
   }
-  function changePin(i){
+  async function changePin(i){
     if (!isAdmin()) return;
     const nieuw = prompt(`Nieuwe pincode voor ${accounts[i].name} (max 4 cijfers):`, "");
     if (nieuw===null) return;
     if (!/^\d{1,4}$/.test(nieuw)){ alert('Pincode moet 1–4 cijfers zijn.'); return; }
-    accounts[i].pin = nieuw;
+    accounts[i].pinHash = await sha256Hex(nieuw);
+    if ('pin' in accounts[i]) delete accounts[i].pin; // zeker opruimen
     logAction(`PIN gewijzigd voor ${accounts[i].name}`);
     saveAll(); updateAdminScreen();
     alert('Pincode bijgewerkt.');
@@ -617,17 +659,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /* ---- Logs ---- */
   function exportLogsToCSV(){
-    // Admin én Co-admin mogen exporteren
     if (!(isAdmin()||isCoAdmin())) return;
     if (logs.length===0){ alert('Het logboek is leeg.'); return; }
-    const csv = "Gebruiker,Product,Prijs,Tijd\n" + logs.map(l=>`${l.gebruiker},${l.product},${formatPrice(l.prijs)},${l.tijd}`).join('\n');
+
+    const header = ["Gebruiker","Product","Prijs","Tijd"];
+    const esc = v => `"${String(v).replace(/"/g,'""')}"`;
+    const rows = logs.map(l => [l.gebruiker, l.product, formatPrice(l.prijs), l.tijd].map(esc).join(','));
+    const csv = header.map(esc).join(',') + '\n' + rows.join('\n');
+
     const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href=url; a.download='logboek.csv'; document.body.appendChild(a); a.click();
-    document.body.removeChild(a); URL.revokeObjectURL(url);
+    const a = document.createElement('a'); a.href=url; a.download='logboek.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+
+    logAction('Logboek geëxporteerd (CSV)');
+    saveAll();
   }
   function clearLogs(){
-    // Alleen Admin mag wissen
     if (!isAdmin()) return;
     if (!confirm('Logboek wissen?')) return;
     logs=[]; saveAll(); updateAdminScreen();
@@ -641,17 +689,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href=url; a.download='fictief-geld-data.json'; document.body.appendChild(a); a.click();
     document.body.removeChild(a); URL.revokeObjectURL(url);
+    logAction('Data geëxporteerd (JSON)');
+    saveAll();
   }
-  function importAllFromJSON(file){
+  async function importAllFromJSON(file){
     if (!isAdmin()) return;
     if (!file) return;
     const r = new FileReader();
-    r.onload = e=>{
+    r.onload = async e=>{
       try{
         const data = JSON.parse(e.target.result);
         if (!data || !Array.isArray(data.accounts) || !Array.isArray(data.products) || !Array.isArray(data.logs)){ alert('Onjuist JSON-formaat.'); return; }
         if (!confirm('Huidige data overschrijven?')) return;
         accounts = data.accounts; products = data.products; logs = data.logs;
+        // na import: migratie afdwingen zodat er geen plaintext pin achterblijft
+        await migratePinsIfNeeded();
+        logAction('Data geïmporteerd (JSON)');
         saveAll(); loadAccountButtons(); updateAdminScreen(); alert('Data geïmporteerd.');
       }catch(err){ alert('Kon JSON niet lezen: '+err.message); }
       importFile.value='';
@@ -661,10 +714,11 @@ document.addEventListener('DOMContentLoaded', () => {
   function resetAllData(){
     if (!isAdmin()) return;
     if (!confirm('Alle data herstellen naar standaard?')) return;
+    logAction('Data reset naar standaard');
     accounts = [
-      {name:"Jan", pin:"1234", saldo:40.00, type:"vast", role:"user"},
-      {name:"Piet", pin:"5678", saldo:5.00, type:"gast", role:"user"},
-      {name:"Beheer", pin:"9999", saldo:0.00, type:"vast", role:"admin"}
+      {name:"Jan", pinHash:"", saldo:40.00, type:"vast", role:"user"},
+      {name:"Piet", pinHash:"", saldo:5.00, type:"gast", role:"user"},
+      {name:"Beheer", pinHash:"", saldo:0.00, type:"vast", role:"admin"}
     ];
     products = [
       {name:"Chips", price:0.75, stock:20},
@@ -672,24 +726,33 @@ document.addEventListener('DOMContentLoaded', () => {
       {name:"Cola",  price:1.00, stock:15}
     ];
     logs = [];
-    saveAll(); loadAccountButtons(); updateAdminScreen(); alert('Hersteld.');
+    // zet standaard pincode hashes (zelfde codes als vroeger)
+    (async ()=>{
+      accounts[0].pinHash = await sha256Hex("1234");
+      accounts[1].pinHash = await sha256Hex("5678");
+      accounts[2].pinHash = await sha256Hex("9999");
+      saveAll(); loadAccountButtons(); updateAdminScreen(); alert('Hersteld.');
+    })();
   }
 
   /* ---- Wire up ---- */
-  adminLoginBtn.addEventListener('click', adminLogin);
-  userLoginBtn.addEventListener('click', checkLogin);
+  adminLoginBtn.addEventListener('click', ()=>adminLogin());
+  userLoginBtn.addEventListener('click', ()=>checkLogin());
   cancelPinBtn.addEventListener('click', goHome);
   logoutUserBtn.addEventListener('click', goHome);
-  logoutAdminBtn.addEventListener('click', goHome);
+
+  logoutAdminBtn.addEventListener('click', () => {
+    logAction('Beheeruitlog');
+    saveAll();
+    goHome();
+  });
 
   adminCode.addEventListener('input', ()=>digitsOnly(adminCode));
   pincode.addEventListener('input', ()=>digitsOnly(pincode));
 
-  // User cart buttons
   checkoutBtn.addEventListener('click', checkoutCart);
   clearCartBtn.addEventListener('click', () => { initCart(); updateUserScreen(); });
 
-  // Admin: logs + data beheer
   exportCsvBtn.addEventListener('click', exportLogsToCSV);
   clearLogsBtn.addEventListener('click', clearLogs);
   exportJsonBtn.addEventListener('click', exportAllToJSON);
@@ -697,8 +760,28 @@ document.addEventListener('DOMContentLoaded', () => {
   importFile.addEventListener('change', ()=>importAllFromJSON(importFile.files[0]));
   resetBtn.addEventListener('click', resetAllData);
 
-  // Start
-  loadAccountButtons();
+  const logoImg = document.querySelector('img.logo');
+  const watermark = document.querySelector('.watermark');
+  logoImg.addEventListener('error', ()=>{
+    logoImg.style.display='none';
+    if (watermark) watermark.style.display='none';
+  });
+
+  // Init: eerst migreren, dán UI renderen
+  (async ()=>{
+    await migratePinsIfNeeded();
+    // Voor demo/legacy: zorg dat standaard-accounts een hash hebben als nieuw project
+    if (accounts.some(a => !a.pinHash)){
+      for (const a of accounts){
+        if (!a.pinHash){
+          // kies een simpele default als er echt niets is (niet ideaal, maar zorgt dat project start)
+          a.pinHash = await sha256Hex("0000");
+        }
+      }
+      saveAll();
+    }
+    loadAccountButtons();
+  })();
 });
 </script>
 </body>

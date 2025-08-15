@@ -408,7 +408,7 @@ header, .container {
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   /* ---- Config ---- */
-  const APP_VERSION = "2025-08-15-wide-rename-pin4-v4";
+  const APP_VERSION = "2025-08-15-wide-rename-pin4-v5";
   const MAX_USERS = 50;
   const ADMIN_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
   const ADMIN_LOCK_MAX_FAILS = 5;
@@ -937,6 +937,8 @@ document.addEventListener('DOMContentLoaded', () => {
     updateUserScreen();
     loadAccountButtons();
     await showModal({ title: 'Succes', message: 'Aankoop voltooid.' });
+    // Automatisch uitloggen en terug naar homescherm
+    goHome();
   }
 
   /* ---- Admin login met cooldown + idle timeout ---- */
@@ -966,6 +968,10 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     const inputHash = await sha256Hex(adminCode.value);
+    
+    // Wis de pincode onmiddellijk na invoer voor extra veiligheid
+    adminCode.value = '';
+
     if (acc.pinHash !== inputHash) {
       await showModal({ title: 'Fout', message: 'Verkeerde pincode!' });
       const nextFails = (lock.fails || 0) + 1;
@@ -982,7 +988,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setLockState({ fails: 0, until: 0 });
     currentManager = { index: idx, role: acc.role };
-    adminCode.value = '';
     hide(homeScreen);
     show(adminScreen);
     adminTitle.textContent = acc.role === 'coadmin' ? 'Co-Admin Paneel' : 'Admin Paneel';

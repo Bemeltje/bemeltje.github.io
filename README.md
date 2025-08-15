@@ -53,6 +53,8 @@ header, .container{ position:relative; z-index:1; }
 .pin-toggle { background:#eef7f2; color:var(--brand-green); border:0; border-radius:8px; padding:8px 10px; cursor:pointer; }
 .pin-toggle:active{ transform:translateY(1px); }
 
+.form-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:8px; }
+
 /* Modals */
 .modal-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; z-index:9999; }
 .modal{ background:#fff; border-radius:14px; padding:16px; width:min(460px,92vw); box-shadow:0 10px 30px rgba(0,0,0,.2); }
@@ -113,7 +115,7 @@ header, .container{ position:relative; z-index:1; }
   <h2 id="welcome"></h2>
   <p>Saldo: €<span id="saldo"></span></p>
   <div id="productList"></div>
-  <div id="cartSummary" class="cart-summary">
+  <div class="cart-summary">
     <span><strong>Totaal:</strong> €<span id="cartTotal">0.00</span> — <span id="cartItems">0</span> item(s)</span>
     <span>
       <button id="checkoutBtn" disabled>🛒 Afrekenen</button>
@@ -161,11 +163,11 @@ header, .container{ position:relative; z-index:1; }
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   /* ---- Config ---- */
-  const APP_VERSION = "2025-08-15-hash2-admin-guard-rolemodal";
-  const MAX_USERS = 50;                  // maximaal aantal accounts
-  const ADMIN_IDLE_TIMEOUT_MS = 5*60*1000; // 5 min inactiviteit -> auto-logout
-  const ADMIN_LOCK_MAX_FAILS = 5;       // na 5 foute pogingen
-  const ADMIN_LOCK_DURATION_MS = 2*60*1000; // 2 min lockout
+  const APP_VERSION = "2025-08-15-rolemodal-guestcheckbox";
+  const MAX_USERS = 50;
+  const ADMIN_IDLE_TIMEOUT_MS = 5*60*1000;
+  const ADMIN_LOCK_MAX_FAILS = 5;
+  const ADMIN_LOCK_DURATION_MS = 2*60*1000;
 
   let currentManager = null; // {index, role:'admin'|'coadmin'}
   let lastAdminActionAt = Date.now();
@@ -585,7 +587,6 @@ document.addEventListener('DOMContentLoaded', () => {
       saveAll(); goHome();
     }
   }, 15*1000);
-  // elke klik/toets in adminpaneel verlengt sessie
   document.addEventListener('click', ()=>{ if (!adminScreen.classList.contains('hidden')) touchAdminActivity(); });
   document.addEventListener('keydown', ()=>{ if (!adminScreen.classList.contains('hidden')) touchAdminActivity(); });
 
@@ -598,25 +599,23 @@ document.addEventListener('DOMContentLoaded', () => {
     accDiv.innerHTML = `
       <h3>Accounts</h3>
       <div class="item">
-        <div style="flex:1; min-width:240px;">
+        <div id="newAccountForm" style="flex:1; min-width:260px; display:flex; flex-direction:column;">
           <input id="newName" placeholder="Naam" ${!(isAdmin()||isCoAdmin())?'disabled':''}>
           <div class="pin-wrap">
             <input id="newPin" type="password" placeholder="Pincode (4 cijfers)" maxlength="4" inputmode="numeric" ${!(isAdmin()||isCoAdmin())?'disabled':''} autocomplete="new-password" autocapitalize="off" spellcheck="false">
             <button class="pin-toggle" id="toggleNewPin"${!(isAdmin()||isCoAdmin())?' disabled':''}>👁️</button>
           </div>
           <input type="number" id="newSaldo" placeholder="Startsaldo" ${!(isAdmin()||isCoAdmin())?'disabled':''}>
-          <select id="newType" ${!(isAdmin()||isCoAdmin())?'disabled':''}>
-            <option value="gast">Gast</option>
-            <option value="vast">Vast</option>
-          </select>
+          <label class="small" title="Markeer als gastaccount (mag niet onder €0)"><input type="checkbox" id="newIsGuest" ${!(isAdmin()||isCoAdmin())?'disabled':''}> Gastaccount</label>
           <select id="newRole" ${!isAdmin()?'disabled':''}>
             <option value="user">Rol: Gebruiker</option>
             <option value="coadmin">Rol: Co-admin</option>
             <option value="admin">Rol: Admin</option>
           </select>
-        </div>
-        <div>
-          ${(isAdmin()||isCoAdmin())?'<button id="addAccountBtn">Account toevoegen</button>':''}
+          ${(isAdmin()||isCoAdmin())?`
+          <div class="form-actions">
+            <button id="addAccountBtn">Account toevoegen</button>
+          </div>`:''}
         </div>
       </div>
       <div id="accountList"></div>
@@ -701,6 +700,18 @@ document.addEventListener('DOMContentLoaded', () => {
       toggleNewPin.addEventListener('click', ()=>{ newPin.type = newPin.type === 'password' ? 'text' : 'password'; });
     }
 
+    // Enter-toevoegen in nieuw account formulier
+    const newForm = adminSections.querySelector('#newAccountForm');
+    if (newForm){
+      newForm.addEventListener('keydown', (e)=>{
+        if (e.key === 'Enter'){
+          e.preventDefault();
+          const btn = adminSections.querySelector('#addAccountBtn');
+          if (btn && !btn.disabled) btn.click();
+        }
+      });
+    }
+
     // Buttons wiring
     const addAccountBtn = adminSections.querySelector('#addAccountBtn');
     if (addAccountBtn) addAccountBtn.addEventListener('click', ()=>addAccount());
@@ -740,20 +751,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const name = (document.getElementById('newName').value||'').trim();
     const pin = (document.getElementById('newPin').value||'').trim();
     const saldo = parseFloat(document.getElementById('newSaldo').value);
-    const type = document.getElementById('newType').value;
+    const isGuest = !!document.getElementById('newIsGuest').checked;
     const roleSelect = document.getElementById('newRole');
     const role = isAdmin() ? roleSelect.value : 'user';
 
     if (!name || !pin || isNaN(saldo)){ alert('Vul alle velden in!'); return; }
     if (!/^\d{1,4}$/.test(pin)){ alert('Pincode moet 1–4 cijfers zijn.'); return; }
+
     const pinHash = await sha256Hex(pin);
+    const type = isGuest ? 'gast' : 'vast';
     accounts.push({name, pinHash, saldo: Number(saldo), type, role});
-    logAction(`Account aangemaakt: ${name} (rol: ${role})`);
+    logAction(`Account aangemaakt: ${name} (rol: ${role}, type: ${type})`);
     saveAll(); loadAccountButtons(); updateAdminScreen();
+
+    // reset formulier
     document.getElementById('newName').value='';
     document.getElementById('newPin').value='';
     document.getElementById('newSaldo').value='';
-    document.getElementById('newType').value='gast';
+    document.getElementById('newIsGuest').checked=false;
     if (isAdmin()) document.getElementById('newRole').value='user';
   }
 

@@ -48,17 +48,18 @@ th{ background:#f8fafb; }
 .cart-summary strong { font-size:1.05em; }
 .watermark{ position:fixed; inset:0; pointer-events:none; background: url('logo.png') no-repeat right 40px top 40px; background-size: 320px auto; opacity:.06; z-index:0; }
 header, .container{ position:relative; z-index:1; }
+
 .pin-wrap { position: relative; display:flex; align-items:center; gap:8px; }
 .pin-toggle { background:#eef7f2; color:var(--brand-green); border:0; border-radius:8px; padding:8px 10px; cursor:pointer; }
 .pin-toggle:active{ transform:translateY(1px); }
 
-/* === Secure modal === */
+/* Modals */
 .modal-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; z-index:9999; }
-.modal{ background:#fff; border-radius:14px; padding:16px; width:min(420px,92vw); box-shadow:0 10px 30px rgba(0,0,0,.2); }
+.modal{ background:#fff; border-radius:14px; padding:16px; width:min(460px,92vw); box-shadow:0 10px 30px rgba(0,0,0,.2); }
 .modal h4{ margin:0 0 8px 0; }
 .modal .row{ display:flex; gap:8px; align-items:center; }
 .modal .actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
-.modal input[type="password"], .modal input[type="text"]{ width:100%; }
+.modal input[type="password"], .modal input[type="text"], .modal select{ width:100%; }
 </style>
 </head>
 <body>
@@ -91,7 +92,7 @@ header, .container{ position:relative; z-index:1; }
         autocapitalize="off"
         spellcheck="false"
         readonly
-        >
+      >
       <button id="adminLoginBtn">Inloggen</button>
     </span>
   </div>
@@ -160,8 +161,14 @@ header, .container{ position:relative; z-index:1; }
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   /* ---- Config ---- */
-  const APP_VERSION = "2025-08-15-hash2";
-  let currentManager = null; // {index, role: 'admin'|'coadmin'}
+  const APP_VERSION = "2025-08-15-hash2-admin-guard-rolemodal";
+  const MAX_USERS = 50;                  // maximaal aantal accounts
+  const ADMIN_IDLE_TIMEOUT_MS = 5*60*1000; // 5 min inactiviteit -> auto-logout
+  const ADMIN_LOCK_MAX_FAILS = 5;       // na 5 foute pogingen
+  const ADMIN_LOCK_DURATION_MS = 2*60*1000; // 2 min lockout
+
+  let currentManager = null; // {index, role:'admin'|'coadmin'}
+  let lastAdminActionAt = Date.now();
 
   /* ---- State ---- */
   let accounts = safeGet('accounts', [
@@ -242,8 +249,14 @@ document.addEventListener('DOMContentLoaded', () => {
   function logAction(text, bedrag=0){
     logs.push({gebruiker: actorName(), product: `ACTIE: ${text}`, prijs: bedrag, tijd: now()});
   }
+  function getAdminCount(){
+    return accounts.filter(a => a.role === 'admin').length;
+  }
+  function isOnlyAdmin(index){
+    return accounts[index]?.role === 'admin' && getAdminCount() === 1;
+  }
 
-  // SHA-256
+  // SHA-256 hashing
   async function sha256Hex(str){
     const enc = new TextEncoder().encode(str);
     const buf = await crypto.subtle.digest('SHA-256', enc);
@@ -251,7 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return Array.from(bytes).map(b=>b.toString(16).padStart(2,'0')).join('');
   }
 
-  // Secure modal helper voor PIN invoer/wijziging
+  // PIN modal
   function securePinModal({title="Nieuwe pincode", okText="Opslaan"}){
     return new Promise(resolve=>{
       const backdrop = document.createElement('div');
@@ -284,14 +297,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const t2 = modal.querySelector('#toggle2');
 
       const enforceDigits = (el)=> el.addEventListener('input', ()=>{ el.value = el.value.replace(/\D+/g,'').slice(0,4); });
-
       enforceDigits(pin1); enforceDigits(pin2);
       const toggle = (btn, el)=> btn.addEventListener('click', ()=>{ el.type = el.type==='password'?'text':'password'; });
-
       toggle(t1, pin1); toggle(t2, pin2);
 
       function close(val){ document.body.removeChild(backdrop); resolve(val); }
-
       cancel.addEventListener('click', ()=>close(null));
       ok.addEventListener('click', ()=>{
         if (!pin1.value){ alert('Vul een pincode in.'); return; }
@@ -299,13 +309,51 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pin1.value !== pin2.value){ alert('Pincodes komen niet overeen.'); return; }
         close(pin1.value);
       });
-
       backdrop.addEventListener('click', (e)=>{ if (e.target===backdrop) close(null); });
       pin1.focus();
     });
   }
 
-  // Migratie plaintext -> hash
+  // Role modal (dropdown)
+  function roleModal({title="Rol wijzigen", current="user"}){
+    return new Promise(resolve=>{
+      const roles = ["user","coadmin","admin"];
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop';
+      const modal = document.createElement('div');
+      modal.className = 'modal';
+      modal.innerHTML = `
+        <h4>${title}</h4>
+        <div class="row">
+          <select id="roleSelect">
+            ${roles.map(r=>`<option value="${r}" ${r===current?'selected':''}>${r}</option>`).join('')}
+          </select>
+        </div>
+        <div class="actions">
+          <button id="cancel" class="ghost">Annuleren</button>
+          <button id="ok">Wijzigen</button>
+        </div>
+      `;
+      backdrop.appendChild(modal);
+      document.body.appendChild(backdrop);
+      const ok = modal.querySelector('#ok');
+      const cancel = modal.querySelector('#cancel');
+      const sel = modal.querySelector('#roleSelect');
+      function close(val){ document.body.removeChild(backdrop); resolve(val); }
+      cancel.addEventListener('click', ()=>close(null));
+      ok.addEventListener('click', ()=>close(sel.value));
+      backdrop.addEventListener('click', (e)=>{ if (e.target===backdrop) close(null); });
+      sel.focus();
+    });
+  }
+
+  // Login lock helpers
+  function getLockState(){
+    try{ return JSON.parse(localStorage.getItem('adminLock')||'{}'); }catch{ return {}; }
+  }
+  function setLockState(s){ localStorage.setItem('adminLock', JSON.stringify(s)); }
+
+  // Migreer plaintext -> hash
   async function migratePinsIfNeeded(){
     let changed = false;
     for (const acc of accounts){
@@ -348,13 +396,11 @@ document.addEventListener('DOMContentLoaded', () => {
       staff.forEach(s=>{
         const opt = document.createElement('option');
         opt.value = s.idx; opt.text = `${s.a.name} (${s.a.role})`;
-        // random name attribuut tegen autofill heuristiek
-        adminCode.setAttribute('name', 'pin_' + Math.random().toString(36).slice(2,8));
         adminAccountSelect.appendChild(opt);
       });
+      adminCode.setAttribute('name', 'pin_' + Math.random().toString(36).slice(2,8));
     }
 
-    // lege, readOnly tot focus (tegen auto-fill)
     adminCode.value = '';
     adminCode.addEventListener('focus', ()=> adminCode.removeAttribute('readonly'), {once:true});
   }
@@ -368,8 +414,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function goHome(){
     hide(pinScreen); hide(userScreen); hide(adminScreen);
     show(homeScreen);
-    adminCode.value = ''; // altijd legen
-    adminCode.setAttribute('readonly',''); // reset anti-autofill
+    adminCode.value = '';
+    adminCode.setAttribute('readonly','');
     currentManager = null;
     loadAccountButtons();
   }
@@ -477,7 +523,7 @@ document.addEventListener('DOMContentLoaded', () => {
     alert('Aankoop voltooid.');
   }
 
-  /* ---- Admin login ---- */
+  /* ---- Admin login met cooldown + idle timeout ---- */
   async function adminLogin(){
     const sel = adminAccountSelect.value;
     if (sel === ''){ alert('Kies een beheerder-account.'); return; }
@@ -485,13 +531,30 @@ document.addEventListener('DOMContentLoaded', () => {
     const acc = accounts[idx];
     if (!acc || (acc.role!=='admin' && acc.role!=='coadmin')){ alert('Geen beheerdersrol.'); return; }
 
+    const lock = getLockState();
+    const nowTs = Date.now();
+    if (lock.until && nowTs < lock.until){
+      const sec = Math.ceil((lock.until - nowTs)/1000);
+      alert(`Te veel mislukte pogingen. Probeer over ${sec}s opnieuw.`);
+      return;
+    }
+
     const inputHash = await sha256Hex(adminCode.value || '');
     if (acc.pinHash !== inputHash){
       alert('Verkeerde pincode!');
+      const nextFails = (lock.fails||0)+1;
+      if (nextFails >= ADMIN_LOCK_MAX_FAILS){
+        setLockState({fails:0, until: nowTs + ADMIN_LOCK_DURATION_MS});
+        alert('Account tijdelijk geblokkeerd voor beheerlogin (2 minuten).');
+      } else {
+        setLockState({fails: nextFails, until: 0});
+      }
       logAction(`MISLUKTE beheerlogin voor ${acc.name}`);
       saveAll();
       return;
     }
+
+    setLockState({fails:0, until:0});
     currentManager = { index: idx, role: acc.role };
     adminCode.value = '';
     hide(homeScreen); show(adminScreen);
@@ -500,18 +563,31 @@ document.addEventListener('DOMContentLoaded', () => {
     saveAll();
     updateAdminScreen();
     applyPermissions();
+    touchAdminActivity();
   }
   function isAdmin(){ return currentManager && currentManager.role==='admin'; }
   function isCoAdmin(){ return currentManager && currentManager.role==='coadmin'; }
   function applyPermissions(){
     if (isAdmin()){ show(dataBeheer); } else { hide(dataBeheer); }
-    if (exportCsvBtn) exportCsvBtn.disabled = false; // beide mogen exporteren
+    if (exportCsvBtn) exportCsvBtn.disabled = false;
     if (isAdmin()){
       clearLogsBtn.disabled = false; clearLogsBtn.classList.remove('hidden');
     } else {
       clearLogsBtn.disabled = true; clearLogsBtn.classList.add('hidden');
     }
   }
+  function touchAdminActivity(){ lastAdminActionAt = Date.now(); }
+  setInterval(()=>{
+    if (!currentManager) return;
+    if (Date.now() - lastAdminActionAt > ADMIN_IDLE_TIMEOUT_MS){
+      alert('Vanwege inactiviteit ben je uitgelogd uit het adminpaneel.');
+      logAction('Beheer auto-uitlog (inactiviteit)');
+      saveAll(); goHome();
+    }
+  }, 15*1000);
+  // elke klik/toets in adminpaneel verlengt sessie
+  document.addEventListener('click', ()=>{ if (!adminScreen.classList.contains('hidden')) touchAdminActivity(); });
+  document.addEventListener('keydown', ()=>{ if (!adminScreen.classList.contains('hidden')) touchAdminActivity(); });
 
   /* ---- Admin screen ---- */
   function updateAdminScreen(){
@@ -579,7 +655,11 @@ document.addEventListener('DOMContentLoaded', () => {
           ${acc.role==='admin' ? '<span class="badge admin">admin</span>' : acc.role==='coadmin' ? '<span class="badge coadmin">co-admin</span>' : ''}
           (Saldo €${formatPrice(acc.saldo)})
         </span>
-        <span>
+        <span style="display:flex; align-items:center; gap:8px;">
+          <label class="small" title="Schakel gaststatus">
+            <input type="checkbox" data-type="${i}" ${acc.type==='gast'?'checked':''} ${!(isAdmin()||isCoAdmin())?'disabled':''}>
+            Gast
+          </label>
           ${isAdmin()?`<button data-role="${i}">Rol wijzigen</button>`:''}
           ${isAdmin()?`<button data-pin="${i}">PIN wijzigen</button>`:''}
           <button data-add="${i}">+€</button>
@@ -633,21 +713,41 @@ document.addEventListener('DOMContentLoaded', () => {
     adminSections.querySelectorAll('button[data-pdel]').forEach(btn=>btn.addEventListener('click',()=>deleteProduct(+btn.dataset.pdel)));
     adminSections.querySelectorAll('button[data-restock]').forEach(btn=>btn.addEventListener('click',()=>restockProduct(+btn.dataset.restock)));
     adminSections.querySelectorAll('button[data-price]').forEach(btn=>btn.addEventListener('click',()=>changePrice(+btn.dataset.price)));
+
+    // Toggle gast/vast checkbox
+    adminSections.querySelectorAll('input[data-type]').forEach(chk=>{
+      chk.addEventListener('change', ()=>{
+        const idx = +chk.getAttribute('data-type');
+        const oud = accounts[idx].type;
+        const nieuw = chk.checked ? 'gast' : 'vast';
+        if (oud === nieuw) return;
+        accounts[idx].type = nieuw;
+        logAction(`Type gewijzigd: ${accounts[idx].name} → ${nieuw}`);
+        saveAll();
+        loadAccountButtons();
+        updateAdminScreen();
+      });
+    });
   }
 
   /* ---- Admin actions ---- */
   async function addAccount(){
     if (!(isAdmin()||isCoAdmin())) return;
-    const name = document.getElementById('newName').value.trim();
-    const pin = document.getElementById('newPin').value.trim();
+    if (accounts.length >= MAX_USERS){
+      alert(`Maximum aantal accounts (${MAX_USERS}) bereikt. Verwijder eerst een account.`);
+      return;
+    }
+    const name = (document.getElementById('newName').value||'').trim();
+    const pin = (document.getElementById('newPin').value||'').trim();
     const saldo = parseFloat(document.getElementById('newSaldo').value);
     const type = document.getElementById('newType').value;
     const roleSelect = document.getElementById('newRole');
     const role = isAdmin() ? roleSelect.value : 'user';
+
     if (!name || !pin || isNaN(saldo)){ alert('Vul alle velden in!'); return; }
     if (!/^\d{1,4}$/.test(pin)){ alert('Pincode moet 1–4 cijfers zijn.'); return; }
     const pinHash = await sha256Hex(pin);
-    accounts.push({name, pinHash, saldo, type, role});
+    accounts.push({name, pinHash, saldo: Number(saldo), type, role});
     logAction(`Account aangemaakt: ${name} (rol: ${role})`);
     saveAll(); loadAccountButtons(); updateAdminScreen();
     document.getElementById('newName').value='';
@@ -656,21 +756,28 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('newType').value='gast';
     if (isAdmin()) document.getElementById('newRole').value='user';
   }
+
   function deleteAccount(i){
     if (!isAdmin()) return;
+    if (isOnlyAdmin(i)){
+      alert('Je kunt de laatste admin niet verwijderen. Wijs eerst een andere admin toe.');
+      return;
+    }
     if (!confirm(`Account "${accounts[i].name}" verwijderen?`)) return;
     logAction(`Account verwijderd: ${accounts[i].name}`);
     accounts.splice(i,1);
     saveAll(); loadAccountButtons(); updateAdminScreen();
   }
+
   function addSaldo(i){
     const invoer = prompt('Bedrag toevoegen (positief getal):');
     const bedrag = parseFloat(invoer);
     if (!isFinite(bedrag) || bedrag <= 0){ alert('Voer een positief getal in.'); return; }
-    accounts[i].saldo += bedrag;
+    accounts[i].saldo += Number(bedrag);
     logAction(`Saldo +€${formatPrice(bedrag)} voor ${accounts[i].name}`, bedrag);
     saveAll(); loadAccountButtons(); updateAdminScreen();
   }
+
   async function changePin(i){
     if (!isAdmin()) return;
     const val = await securePinModal({title:`Nieuwe pincode voor ${accounts[i].name}`});
@@ -681,23 +788,40 @@ document.addEventListener('DOMContentLoaded', () => {
     saveAll(); updateAdminScreen();
     alert('Pincode bijgewerkt.');
   }
-  function changeRole(i){
+
+  async function changeRole(i){
     if (!isAdmin()) return;
+    if (isOnlyAdmin(i)){
+      alert('Deze gebruiker is de laatste admin. Je kunt de laatste admin niet degraderen.');
+      return;
+    }
     const huidige = accounts[i].role || 'user';
-    const nieuw = prompt(`Rol voor ${accounts[i].name} (user / coadmin / admin):`, huidige);
+    const nieuw = await roleModal({title:`Rol wijzigen voor ${accounts[i].name}`, current: huidige});
     if (nieuw===null) return;
     if (!['user','coadmin','admin'].includes(nieuw)){ alert('Ongeldige rol.'); return; }
+
+    if (accounts[i].role === 'admin' && nieuw !== 'admin' && getAdminCount() <= 1){
+      alert('Er moet altijd minstens één admin blijven. Maak eerst een andere admin aan.');
+      return;
+    }
+    if (currentManager && currentManager.index === i && accounts[i].role === 'admin' && nieuw !== 'admin' && getAdminCount() <= 1){
+      alert('Je bent de laatste admin en kunt jezelf niet degraderen. Wijs eerst iemand anders als admin aan.');
+      return;
+    }
     accounts[i].role = nieuw;
     logAction(`Rol gewijzigd: ${accounts[i].name} → ${nieuw}`);
     saveAll(); loadAccountButtons(); updateAdminScreen();
   }
+
   function addProduct(){
     if (!isAdmin()) return;
-    const name = document.getElementById('prodName').value.trim();
+    const name = (document.getElementById('prodName').value||'').trim();
     const price = parseFloat(document.getElementById('prodPrice').value);
     const stock = parseInt(document.getElementById('prodStock').value);
-    if (!name || isNaN(price) || isNaN(stock)){ alert('Vul alle velden in!'); return; }
-    products.push({name, price, stock});
+    if (!name){ alert('Productnaam mag niet leeg zijn.'); return; }
+    if (!isFinite(price) || price < 0){ alert('Prijs moet ≥ 0 zijn.'); return; }
+    if (!Number.isInteger(stock) || stock < 0){ alert('Voorraad moet een geheel getal ≥ 0 zijn.'); return; }
+    products.push({name, price:Number(price), stock:Number(stock)});
     logAction(`Product toegevoegd: ${name} (€${formatPrice(price)})`);
     saveAll(); updateAdminScreen();
     document.getElementById('prodName').value='';
@@ -714,7 +838,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function restockProduct(i){
     if (!isAdmin()) return;
     const add = parseInt(prompt(`Aantal bijvullen voor "${products[i].name}" (huidig: ${products[i].stock})`, "0"));
-    if (isNaN(add)) return;
+    if (!Number.isInteger(add) || add <= 0){ alert('Voer een positief geheel getal in.'); return; }
     products[i].stock = Math.max(0, products[i].stock + add);
     logAction(`Voorraad +${add} voor ${products[i].name}`);
     saveAll(); updateAdminScreen();
@@ -722,9 +846,9 @@ document.addEventListener('DOMContentLoaded', () => {
   function changePrice(i){
     if (!isAdmin()) return;
     const nieuw = parseFloat(prompt(`Nieuwe prijs voor "${products[i].name}" (huidig: €${formatPrice(products[i].price)})`, products[i].price));
-    if (isNaN(nieuw)) return;
+    if (!isFinite(nieuw) || nieuw < 0){ alert('Prijs moet ≥ 0 zijn.'); return; }
     const oud = products[i].price;
-    products[i].price = nieuw;
+    products[i].price = Number(nieuw);
     logAction(`Prijs gewijzigd: ${products[i].name} €${formatPrice(oud)} → €${formatPrice(nieuw)}`);
     saveAll(); updateAdminScreen();
   }
@@ -842,9 +966,7 @@ document.addEventListener('DOMContentLoaded', () => {
     await migratePinsIfNeeded();
     if (accounts.some(a => !a.pinHash)){
       for (const a of accounts){
-        if (!a.pinHash){
-          a.pinHash = await sha256Hex("0000");
-        }
+        if (!a.pinHash){ a.pinHash = await sha256Hex("0000"); }
       }
       saveAll();
     }

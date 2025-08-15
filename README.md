@@ -415,7 +415,7 @@ document.addEventListener('DOMContentLoaded', () => {
   /* ---- Config ---- */
   const APP_VERSION = "2025-08-15-wide-rename-pin4-v5";
   const MAX_USERS = 50;
-  const ADMIN_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+  const ADMIN_IDLE_TIMEOUT_MS = 1 * 60 * 1000;
   const ADMIN_LOCK_MAX_FAILS = 5;
   const ADMIN_LOCK_DURATION_MS = 2 * 60 * 1000;
 

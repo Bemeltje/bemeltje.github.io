@@ -18,6 +18,8 @@ input,select { padding:9px; margin:5px 0; width:100%; border:1px solid #ccc; bor
 .item { border-bottom:1px solid #eee; padding:8px 0; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
 .item:last-child{ border-bottom:none; }
 .badge { background:#f39c12; color:#fff; padding:2px 6px; font-size:.8em; border-radius:4px; margin-left:5px; }
+.badge.admin { background:#2b7cd3; }
+.badge.coadmin { background:#27ae60; }
 #accountButtons { display:grid; grid-template-columns:repeat(auto-fill, minmax(250px,1fr)); gap:12px; }
 .account-card { background:#fff; border-radius:8px; padding:12px; box-shadow:0 2px 8px rgba(0,0,0,.05); display:flex; flex-direction:column; align-items:flex-start; border-left:5px solid transparent; transition:transform .1s; }
 .account-card:hover{ transform:translateY(-2px); }
@@ -42,9 +44,15 @@ th{ background:#f4f4f4; }
   <h2>Kies je account</h2>
   <div id="accountButtons"></div>
   <hr>
-  <input type="password" id="adminCode" placeholder="Admin/Co-admin pincode" maxlength="4" inputmode="numeric">
-  <button id="adminLoginBtn">Inloggen</button>
-  <p class="small">Zie je geen accounts? Log in als admin en kies "Herstel naar standaard".</p>
+  <div class="item">
+    <span>Beheerder inloggen</span>
+    <span style="display:flex; gap:6px; align-items:center;">
+      <select id="adminAccountSelect" style="min-width:220px"></select>
+      <input type="password" id="adminCode" placeholder="Pincode" maxlength="4" inputmode="numeric" style="width:120px;">
+      <button id="adminLoginBtn">Inloggen</button>
+    </span>
+  </div>
+  <p class="small">Tip: Rollen worden toegekend per account. Alleen accounts met rol <strong>Admin</strong> of <strong>Co‑admin</strong> kunnen inloggen op het beheer.</p>
 </div>
 
 <!-- PIN -->
@@ -110,14 +118,13 @@ th{ background:#f4f4f4; }
 document.addEventListener('DOMContentLoaded', () => {
   /* ---- Config ---- */
   const APP_VERSION = "2025-08-15";
-  const ADMIN_PIN = "9999";
-  const COADMIN_PIN = "8888";
-  let isCoAdmin = false;
+  let currentManager = null; // {index, role: 'admin'|'coadmin'}
 
   /* ---- State ---- */
   let accounts = safeGet('accounts', [
-    {name:"Jan", pin:"1234", saldo:10.00, type:"vast"},
-    {name:"Piet", pin:"5678", saldo:5.00, type:"gast"}
+    {name:"Jan", pin:"1234", saldo:10.00, type:"vast", role:"user"},
+    {name:"Piet", pin:"5678", saldo:5.00, type:"gast", role:"user"},
+    {name:"Beheer", pin:"9999", saldo:0.00, type:"vast", role:"admin"}
   ]);
   let products = safeGet('products', [
     {name:"Chips", price:0.75, stock:20},
@@ -135,6 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const adminScreen = document.getElementById('adminScreen');
 
   const accountButtons = document.getElementById('accountButtons');
+  const adminAccountSelect = document.getElementById('adminAccountSelect');
   const adminCode = document.getElementById('adminCode');
   const adminLoginBtn = document.getElementById('adminLoginBtn');
 
@@ -187,28 +195,40 @@ document.addEventListener('DOMContentLoaded', () => {
   function digitsOnly(el){ el.value = el.value.replace(/\D+/g,'').slice(0,4); }
   function show(el){ el.classList.remove('hidden'); }
   function hide(el){ el.classList.add('hidden'); }
+  function now(){ return new Date().toLocaleString(); }
+  function logAction(actor, text, prijs=0){
+    logs.push({gebruiker: actor, product: `ACTIE: ${text}` , prijs: prijs, tijd: now()});
+  }
 
-  /* ---- Home: accounts grid ---- */
+  /* ---- Home: accounts grid + beheer select ---- */
   function loadAccountButtons(){
     accountButtons.innerHTML = '';
-    if (!accounts || accounts.length === 0){
-      const info = document.createElement('p');
-      info.className = 'small';
-      info.textContent = 'Geen accounts gevonden. Log in als admin en kies "Herstel naar standaard", of voeg accounts toe.';
-      accountButtons.appendChild(info);
-      return;
-    }
     accounts.forEach((acc, i) => {
       const card = document.createElement('div');
       card.className = 'account-card ' + classifyCard(acc);
+      let roleBadge = '';
+      if (acc.role === 'admin') roleBadge = ' <span class="badge admin">admin</span>';
+      else if (acc.role === 'coadmin') roleBadge = ' <span class="badge coadmin">co-admin</span>';
       card.innerHTML = `
-        <strong>${acc.name}</strong>
-        <span>Saldo: €${formatPrice(acc.saldo)}</span>
-        ${acc.type === 'gast' ? '<span class="badge">gast</span>' : ''}
+        <strong>${acc.name}${roleBadge}</strong>
+        <span>Saldo: €${formatPrice(acc.saldo)} ${acc.type === 'gast' ? '<span class="badge">gast</span>' : ''}</span>
       `;
       card.onclick = () => selectAccount(i);
       accountButtons.appendChild(card);
     });
+
+    // Beheerder-select vullen met alleen admin/coadmin
+    adminAccountSelect.innerHTML = '';
+    const staff = accounts.map((a,idx)=>({idx, a})).filter(x=>x.a.role==='admin' || x.a.role==='coadmin');
+    if (staff.length===0){
+      const opt = document.createElement('option');
+      opt.text = '— geen beheerders —'; opt.value=''; adminAccountSelect.appendChild(opt);
+    } else {
+      staff.forEach(s=>{
+        const opt = document.createElement('option');
+        opt.value = s.idx; opt.text = `${s.a.name} (${s.a.role})`; adminAccountSelect.appendChild(opt);
+      });
+    }
   }
   function classifyCard(acc){
     if (acc.type === 'gast') return acc.saldo >= 0 ? 'green' : 'red';
@@ -222,6 +242,7 @@ document.addEventListener('DOMContentLoaded', () => {
     hide(pinScreen); hide(userScreen); hide(adminScreen);
     show(homeScreen);
     adminCode.value = '';
+    currentManager = null;
     loadAccountButtons();
   }
 
@@ -319,7 +340,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const qty = cart[i]||0;
       if (qty>0){
         products[i].stock -= qty;
-        logs.push({gebruiker:acc.name, product:`${products[i].name} (x${qty})`, prijs: products[i].price*qty, tijd:new Date().toLocaleString()});
+        logs.push({gebruiker:acc.name, product:`${products[i].name} (x${qty})`, prijs: products[i].price*qty, tijd: now()});
         cart[i]=0;
       }
     });
@@ -330,24 +351,31 @@ document.addEventListener('DOMContentLoaded', () => {
     alert('Aankoop voltooid.');
   }
 
-  /* ---- Admin login ---- */
+  /* ---- Admin login via account met rol ---- */
   function adminLogin(){
-    const pin = adminCode.value;
-    if (pin === ADMIN_PIN){ isCoAdmin=false; }
-    else if (pin === COADMIN_PIN){ isCoAdmin=true; }
-    else { alert('Verkeerde pincode!'); return; }
+    const sel = adminAccountSelect.value;
+    if (sel === ''){ alert('Kies een beheerder-account.'); return; }
+    const idx = parseInt(sel);
+    const acc = accounts[idx];
+    if (!acc || (acc.role!=='admin' && acc.role!=='coadmin')){ alert('Geen beheerdersrol.'); return; }
+    if (adminCode.value !== acc.pin){ alert('Verkeerde pincode!'); return; }
+    currentManager = { index: idx, role: acc.role };
     adminCode.value = '';
     hide(homeScreen); show(adminScreen);
-    adminTitle.textContent = isCoAdmin ? 'Co-Admin Paneel' : 'Admin Paneel';
+    adminTitle.textContent = acc.role === 'coadmin' ? 'Co-Admin Paneel' : 'Admin Paneel';
     updateAdminScreen();
-    // Alleen admin mag export/import/reset en log-acties
-    if (isCoAdmin){
-      hide(dataBeheer);
-      // co-admin: geen CSV export / geen logs wissen
-      logActions.querySelectorAll('button').forEach(b=>b.disabled = true);
-    } else {
+    applyPermissions();
+  }
+  function isAdmin(){ return currentManager && currentManager.role==='admin'; }
+  function isCoAdmin(){ return currentManager && currentManager.role==='coadmin'; }
+  function applyPermissions(){
+    if (isAdmin()){
       show(dataBeheer);
       logActions.querySelectorAll('button').forEach(b=>b.disabled = false);
+    } else {
+      hide(dataBeheer);
+      // co-admin: geen CSV export en log wissen
+      logActions.querySelectorAll('button').forEach(b=>b.disabled = true);
     }
   }
 
@@ -360,28 +388,33 @@ document.addEventListener('DOMContentLoaded', () => {
     accDiv.innerHTML = `
       <h3>Accounts</h3>
       <div class="item">
-        <div style="flex:1; min-width:220px;">
-          <input id="newName" placeholder="Naam" ${isCoAdmin?'disabled':''}>
-          <input id="newPin" placeholder="Pincode (4 cijfers)" maxlength="4" inputmode="numeric" ${isCoAdmin?'disabled':''}>
-          <input type="number" id="newSaldo" placeholder="Startsaldo" ${isCoAdmin?'disabled':''}>
-          <select id="newType" ${isCoAdmin?'disabled':''}>
+        <div style="flex:1; min-width:240px;">
+          <input id="newName" placeholder="Naam" ${!isAdmin()?'disabled':''}>
+          <input id="newPin" placeholder="Pincode (4 cijfers)" maxlength="4" inputmode="numeric" ${!isAdmin()?'disabled':''}>
+          <input type="number" id="newSaldo" placeholder="Startsaldo" ${!isAdmin()?'disabled':''}>
+          <select id="newType" ${!isAdmin()?'disabled':''}>
             <option value="gast">Gast</option>
             <option value="vast">Vast</option>
           </select>
+          <select id="newRole" ${!isAdmin()?'disabled':''}>
+            <option value="user">Rol: Gebruiker</option>
+            <option value="coadmin">Rol: Co-admin</option>
+            <option value="admin">Rol: Admin</option>
+          </select>
         </div>
         <div>
-          ${isCoAdmin?'':'<button id="addAccountBtn">Account toevoegen</button>'}
+          ${isAdmin()?'<button id="addAccountBtn">Account toevoegen</button>':''}
         </div>
       </div>
       <div id="accountList"></div>
     `;
     adminSections.appendChild(accDiv);
 
-    // Producten sectie (alleen admin voor wijzigen/aanmaken)
+    // Producten sectie
     const prodDiv = document.createElement('div');
     prodDiv.innerHTML = `
       <h3>Producten</h3>
-      ${isCoAdmin ? '' : `
+      ${isAdmin() ? `
       <div class="item">
         <div style="flex:1; min-width:220px;">
           <input id="prodName" placeholder="Productnaam">
@@ -391,7 +424,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div>
           <button id="addProductBtn">Product toevoegen</button>
         </div>
-      </div>`}
+      </div>`: ''}
       <div id="productAdminList"></div>
     `;
     adminSections.appendChild(prodDiv);
@@ -403,11 +436,17 @@ document.addEventListener('DOMContentLoaded', () => {
       const row = document.createElement('div');
       row.className = 'item';
       row.innerHTML = `
-        <span>${acc.name} (€${formatPrice(acc.saldo)}) ${acc.type==='gast'?'[gast]':''}</span>
         <span>
-          ${isCoAdmin ? '' : `<button data-pin="${i}">PIN wijzigen</button>`}
+          ${acc.name}
+          ${acc.type==='gast' ? '<span class="badge">gast</span>' : ''}
+          ${acc.role==='admin' ? '<span class="badge admin">admin</span>' : acc.role==='coadmin' ? '<span class="badge coadmin">co-admin</span>' : ''}
+          (Saldo €${formatPrice(acc.saldo)})
+        </span>
+        <span>
+          ${isAdmin()?`<button data-role="${i}">Rol wijzigen</button>`:''}
+          ${isAdmin()?`<button data-pin="${i}">PIN wijzigen</button>`:''}
           <button data-add="${i}">+€</button>
-          ${isCoAdmin ? '' : `<button class="red" data-del="${i}">X</button>`}
+          ${isAdmin()?`<button class="red" data-del="${i}">X</button>`:''}
         </span>
       `;
       accountList.appendChild(row);
@@ -423,20 +462,21 @@ document.addEventListener('DOMContentLoaded', () => {
       row.innerHTML = `
         <span>${p.name} (€${formatPrice(p.price)}) - <span class="${voorraadClass}">Voorraad: ${p.stock}</span></span>
         <span>
-          ${isCoAdmin ? '' : `<button data-restock="${i}">Voorraad bijvullen</button>`}
-          ${isCoAdmin ? '' : `<button class="red" data-pdel="${i}">X</button>`}
+          ${isAdmin()?`<button data-price="${i}">Prijs wijzigen</button>`:''}
+          ${isAdmin()?`<button data-restock="${i}">Voorraad bijvullen</button>`:''}
+          ${isAdmin()?`<button class="red" data-pdel="${i}">X</button>`:''}
         </span>
       `;
       prodList.appendChild(row);
     });
 
     // Logboek
-    let html = '<table><tr><th>Gebruiker</th><th>Product</th><th>Prijs</th><th>Tijd</th></tr>';
+    let html = '<table><tr><th>Gebruiker</th><th>Product/Actie</th><th>Prijs/Bedrag</th><th>Tijd</th></tr>';
     logs.forEach(l=>{ html += `<tr><td>${l.gebruiker}</td><td>${l.product}</td><td>€${formatPrice(l.prijs)}</td><td>${l.tijd}</td></tr>`; });
     html += '</table>';
     logList.innerHTML = html;
 
-    // pin-only digits
+    // wire inputs
     const newPin = adminSections.querySelector('#newPin');
     if (newPin) newPin.addEventListener('input', ()=>digitsOnly(newPin));
 
@@ -446,30 +486,37 @@ document.addEventListener('DOMContentLoaded', () => {
     adminSections.querySelectorAll('button[data-del]').forEach(btn=>btn.addEventListener('click',()=>deleteAccount(+btn.dataset.del)));
     adminSections.querySelectorAll('button[data-add]').forEach(btn=>btn.addEventListener('click',()=>addSaldo(+btn.dataset.add)));
     adminSections.querySelectorAll('button[data-pin]').forEach(btn=>btn.addEventListener('click',()=>changePin(+btn.dataset.pin)));
+    adminSections.querySelectorAll('button[data-role]').forEach(btn=>btn.addEventListener('click',()=>changeRole(+btn.dataset.role)));
     const addProductBtn = adminSections.querySelector('#addProductBtn');
     if (addProductBtn) addProductBtn.addEventListener('click', addProduct);
     adminSections.querySelectorAll('button[data-pdel]').forEach(btn=>btn.addEventListener('click',()=>deleteProduct(+btn.dataset.pdel)));
     adminSections.querySelectorAll('button[data-restock]').forEach(btn=>btn.addEventListener('click',()=>restockProduct(+btn.dataset.restock)));
+    adminSections.querySelectorAll('button[data-price]').forEach(btn=>btn.addEventListener('click',()=>changePrice(+btn.dataset.price)));
   }
 
   /* ---- Admin actions ---- */
   function addAccount(){
+    if (!isAdmin()) return;
     const name = document.getElementById('newName').value.trim();
     const pin = document.getElementById('newPin').value.trim();
     const saldo = parseFloat(document.getElementById('newSaldo').value);
     const type = document.getElementById('newType').value;
+    const role = document.getElementById('newRole').value;
     if (!name || !pin || isNaN(saldo)){ alert('Vul alle velden in!'); return; }
     if (!/^\d{1,4}$/.test(pin)){ alert('Pincode moet 1–4 cijfers zijn.'); return; }
-    accounts.push({name, pin, saldo, type});
+    accounts.push({name, pin, saldo, type, role});
+    logAction(accounts[currentManager.index].name, `Account aangemaakt: ${name} (rol: ${role})`);
     saveAll(); loadAccountButtons(); updateAdminScreen();
     document.getElementById('newName').value='';
     document.getElementById('newPin').value='';
     document.getElementById('newSaldo').value='';
     document.getElementById('newType').value='gast';
+    document.getElementById('newRole').value='user';
   }
   function deleteAccount(i){
-    if (isCoAdmin) return;
+    if (!isAdmin()) return;
     if (!confirm(`Account "${accounts[i].name}" verwijderen?`)) return;
+    logAction(accounts[currentManager.index].name, `Account verwijderd: ${accounts[i].name}`);
     accounts.splice(i,1);
     saveAll(); loadAccountButtons(); updateAdminScreen();
   }
@@ -477,46 +524,70 @@ document.addEventListener('DOMContentLoaded', () => {
     const bedrag = parseFloat(prompt('Bedrag toevoegen:'));
     if (isNaN(bedrag)) return;
     accounts[i].saldo += bedrag;
+    const actor = currentManager ? accounts[currentManager.index].name : 'SYSTEEM';
+    logAction(actor, `Saldo +€${formatPrice(bedrag)} voor ${accounts[i].name}`, bedrag);
     saveAll(); loadAccountButtons(); updateAdminScreen();
   }
   function changePin(i){
-    if (isCoAdmin) return;
+    if (!isAdmin()) return;
     const nieuw = prompt(`Nieuwe pincode voor ${accounts[i].name} (max 4 cijfers):`, "");
     if (nieuw===null) return;
     if (!/^\d{1,4}$/.test(nieuw)){ alert('Pincode moet 1–4 cijfers zijn.'); return; }
     accounts[i].pin = nieuw;
+    logAction(accounts[currentManager.index].name, `PIN gewijzigd voor ${accounts[i].name}`);
     saveAll(); updateAdminScreen();
     alert('Pincode bijgewerkt.');
   }
+  function changeRole(i){
+    if (!isAdmin()) return;
+    const huidige = accounts[i].role || 'user';
+    const nieuw = prompt(`Rol voor ${accounts[i].name} (user / coadmin / admin):`, huidige);
+    if (nieuw===null) return;
+    if (!['user','coadmin','admin'].includes(nieuw)){ alert('Ongeldige rol.'); return; }
+    accounts[i].role = nieuw;
+    logAction(accounts[currentManager.index].name, `Rol gewijzigd: ${accounts[i].name} → ${nieuw}`);
+    saveAll(); loadAccountButtons(); updateAdminScreen();
+  }
   function addProduct(){
-    if (isCoAdmin) return;
+    if (!isAdmin()) return;
     const name = document.getElementById('prodName').value.trim();
     const price = parseFloat(document.getElementById('prodPrice').value);
     const stock = parseInt(document.getElementById('prodStock').value);
     if (!name || isNaN(price) || isNaN(stock)){ alert('Vul alle velden in!'); return; }
     products.push({name, price, stock});
+    logAction(accounts[currentManager.index].name, `Product toegevoegd: ${name} (€${formatPrice(price)})`);
     saveAll(); updateAdminScreen();
     document.getElementById('prodName').value='';
     document.getElementById('prodPrice').value='';
     document.getElementById('prodStock').value='';
   }
   function deleteProduct(i){
-    if (isCoAdmin) return;
+    if (!isAdmin()) return;
     if (!confirm(`Product "${products[i].name}" verwijderen?`)) return;
+    logAction(accounts[currentManager.index].name, `Product verwijderd: ${products[i].name}`);
     products.splice(i,1);
     saveAll(); updateAdminScreen();
   }
   function restockProduct(i){
-    if (isCoAdmin) return;
+    if (!isAdmin()) return;
     const add = parseInt(prompt(`Aantal bijvullen voor "${products[i].name}" (huidig: ${products[i].stock})`, "0"));
     if (isNaN(add)) return;
     products[i].stock = Math.max(0, products[i].stock + add);
+    logAction(accounts[currentManager.index].name, `Voorraad +${add} voor ${products[i].name}`);
+    saveAll(); updateAdminScreen();
+  }
+  function changePrice(i){
+    if (!isAdmin()) return;
+    const nieuw = parseFloat(prompt(`Nieuwe prijs voor "${products[i].name}" (huidig: €${formatPrice(products[i].price)})`, products[i].price));
+    if (isNaN(nieuw)) return;
+    products[i].price = nieuw;
+    logAction(accounts[currentManager.index].name, `Prijs gewijzigd: ${products[i].name} → €${formatPrice(nieuw)}`);
     saveAll(); updateAdminScreen();
   }
 
   /* ---- Logs ---- */
   function exportLogsToCSV(){
-    if (isCoAdmin) return; // alleen admin
+    if (!isAdmin()) return; // alleen admin
     if (logs.length===0){ alert('Het logboek is leeg.'); return; }
     const csv = "Gebruiker,Product,Prijs,Tijd\n" + logs.map(l=>`${l.gebruiker},${l.product},${formatPrice(l.prijs)},${l.tijd}`).join('\n');
     const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
@@ -525,14 +596,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.removeChild(a); URL.revokeObjectURL(url);
   }
   function clearLogs(){
-    if (isCoAdmin) return; // alleen admin
+    if (!isAdmin()) return; // alleen admin
     if (!confirm('Logboek wissen?')) return;
     logs=[]; saveAll(); updateAdminScreen();
   }
 
   /* ---- Data import/export/reset (alleen admin) ---- */
   function exportAllToJSON(){
-    if (isCoAdmin) return;
+    if (!isAdmin()) return;
     const payload = { version: APP_VERSION, exportedAt: new Date().toISOString(), accounts, products, logs };
     const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
     const url = URL.createObjectURL(blob);
@@ -540,7 +611,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.removeChild(a); URL.revokeObjectURL(url);
   }
   function importAllFromJSON(file){
-    if (isCoAdmin) return;
+    if (!isAdmin()) return;
     if (!file) return;
     const r = new FileReader();
     r.onload = e=>{
@@ -556,11 +627,12 @@ document.addEventListener('DOMContentLoaded', () => {
     r.readAsText(file);
   }
   function resetAllData(){
-    if (isCoAdmin) return;
+    if (!isAdmin()) return;
     if (!confirm('Alle data herstellen naar standaard?')) return;
     accounts = [
-      {name:"Jan", pin:"1234", saldo:10.00, type:"vast"},
-      {name:"Piet", pin:"5678", saldo:5.00, type:"gast"}
+      {name:"Jan", pin:"1234", saldo:10.00, type:"vast", role:"user"},
+      {name:"Piet", pin:"5678", saldo:5.00, type:"gast", role:"user"},
+      {name:"Beheer", pin:"9999", saldo:0.00, type:"vast", role:"admin"}
     ];
     products = [
       {name:"Chips", price:0.75, stock:20},
@@ -585,7 +657,7 @@ document.addEventListener('DOMContentLoaded', () => {
   checkoutBtn.addEventListener('click', checkoutCart);
   clearCartBtn.addEventListener('click', () => { initCart(); updateUserScreen(); });
 
-  // Admin: logs + data beheer
+  // Admin: logs + data beheer (enforce in handlers)
   exportCsvBtn.addEventListener('click', exportLogsToCSV);
   clearLogsBtn.addEventListener('click', clearLogs);
   exportJsonBtn.addEventListener('click', exportAllToJSON);

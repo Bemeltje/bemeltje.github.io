@@ -18,7 +18,11 @@ header img.logo { width:42px; height:42px; object-fit:contain; filter: drop-shad
 header .title { display:flex; flex-direction:column; line-height:1.15; }
 header .title strong { font-size:1.15rem; letter-spacing:.3px; }
 header .title span { font-size:.8rem; opacity:.95; }
-.container { max-width:1200px; margin:20px auto; background:#fff; padding:20px; border-radius:12px; box-shadow:0 6px 18px rgba(0,0,0,.08); }
+
+/* Breder canvas */
+.container { max-width:1600px; margin:20px auto; background:#fff; padding:20px; border-radius:12px; box-shadow:0 6px 18px rgba(0,0,0,.08); }
+@media (min-width:1900px){ .container{ max-width:1800px; } }
+
 h2,h3 { margin-top:0; }
 button { padding:8px 14px; border:0; background:var(--brand-green); color:#fff; border-radius:8px; cursor:pointer; margin:3px; font-size:.95em; transition:filter .15s, transform .05s; }
 button:hover { filter:brightness(.95); transform:translateY(-1px); }
@@ -32,13 +36,16 @@ input,select { padding:9px; margin:5px 0; width:100%; border:1px solid #dfe3e8; 
 .badge { background:#f39c12; color:#fff; padding:2px 6px; font-size:.8em; border-radius:6px; margin-left:5px; }
 .badge.admin { background:var(--brand-red); }
 .badge.coadmin { background:var(--brand-green); }
-#accountButtons { display:grid; grid-template-columns:repeat(auto-fill, minmax(250px,1fr)); gap:12px; }
+
+/* Meer kolommen op brede schermen */
+#accountButtons { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); gap:12px; }
 .account-card { background:#fff; border-radius:12px; padding:12px; box-shadow:0 2px 8px rgba(0,0,0,.05); display:flex; flex-direction:column; align-items:flex-start; border-left:5px solid transparent; transition:transform .1s; }
 .account-card:hover{ transform:translateY(-2px); }
 .account-card.green{ border-left-color:var(--brand-green); }
 .account-card.orange{ border-left-color:#f39c12; }
 .account-card.red{ border-left-color:var(--brand-red); }
 .account-card strong{ font-size:1.1em; }
+
 table { width:100%; border-collapse:collapse; font-size:.9em; margin-top:10px; }
 th,td { border:1px solid #eceff1; padding:6px; text-align:left; }
 th{ background:#f8fafb; }
@@ -86,10 +93,10 @@ header, .container{ position:relative; z-index:1; }
       <input
         type="password"
         id="adminCode"
-        placeholder="Pincode"
+        placeholder="Pincode (4 cijfers)"
         maxlength="4"
         inputmode="numeric"
-        style="width:120px;"
+        style="width:140px;"
         autocomplete="new-password"
         autocapitalize="off"
         spellcheck="false"
@@ -105,7 +112,7 @@ header, .container{ position:relative; z-index:1; }
 <div class="container hidden" id="pinScreen" autocomplete="off">
   <h2>Inloggen</h2>
   <p id="selectedUserName"></p>
-  <input type="password" id="pincode" placeholder="Voer pincode in" maxlength="4" inputmode="numeric" autocomplete="new-password" autocapitalize="off" spellcheck="false">
+  <input type="password" id="pincode" placeholder="Pincode (4 cijfers)" maxlength="4" inputmode="numeric" autocomplete="new-password" autocapitalize="off" spellcheck="false">
   <button id="userLoginBtn">Inloggen</button>
   <button class="red" id="cancelPinBtn">Annuleren</button>
 </div>
@@ -163,7 +170,7 @@ header, .container{ position:relative; z-index:1; }
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   /* ---- Config ---- */
-  const APP_VERSION = "2025-08-15-rolemodal-guestcheckbox";
+  const APP_VERSION = "2025-08-15-wide-rename-pin4";
   const MAX_USERS = 50;
   const ADMIN_IDLE_TIMEOUT_MS = 5*60*1000;
   const ADMIN_LOCK_MAX_FAILS = 5;
@@ -266,7 +273,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return Array.from(bytes).map(b=>b.toString(16).padStart(2,'0')).join('');
   }
 
-  // PIN modal
+  // PIN modal (precies 4)
   function securePinModal({title="Nieuwe pincode", okText="Opslaan"}){
     return new Promise(resolve=>{
       const backdrop = document.createElement('div');
@@ -276,11 +283,11 @@ document.addEventListener('DOMContentLoaded', () => {
       modal.innerHTML = `
         <h4>${title}</h4>
         <div class="row">
-          <input id="pin1" type="password" placeholder="Pincode (1–4 cijfers)" maxlength="4" inputmode="numeric" autocomplete="new-password" autocapitalize="off" spellcheck="false" style="flex:1;">
+          <input id="pin1" type="password" placeholder="Pincode (exact 4 cijfers)" maxlength="4" inputmode="numeric" autocomplete="new-password" autocapitalize="off" spellcheck="false" style="flex:1;">
           <button id="toggle1" class="pin-toggle" aria-label="Toon/verberg">👁️</button>
         </div>
         <div class="row" style="margin-top:6px;">
-          <input id="pin2" type="password" placeholder="Bevestig pincode" maxlength="4" inputmode="numeric" autocomplete="new-password" autocapitalize="off" spellcheck="false" style="flex:1;">
+          <input id="pin2" type="password" placeholder="Bevestig pincode (4 cijfers)" maxlength="4" inputmode="numeric" autocomplete="new-password" autocapitalize="off" spellcheck="false" style="flex:1;">
           <button id="toggle2" class="pin-toggle" aria-label="Toon/verberg">👁️</button>
         </div>
         <div class="actions">
@@ -306,8 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
       function close(val){ document.body.removeChild(backdrop); resolve(val); }
       cancel.addEventListener('click', ()=>close(null));
       ok.addEventListener('click', ()=>{
-        if (!pin1.value){ alert('Vul een pincode in.'); return; }
-        if (!/^\d{1,4}$/.test(pin1.value)){ alert('Pincode moet 1–4 cijfers zijn.'); return; }
+        if (!/^\d{4}$/.test(pin1.value)){ alert('Pincode moet precies 4 cijfers zijn.'); return; }
         if (pin1.value !== pin2.value){ alert('Pincodes komen niet overeen.'); return; }
         close(pin1.value);
       });
@@ -430,7 +436,7 @@ document.addEventListener('DOMContentLoaded', () => {
     hide(homeScreen); show(pinScreen);
   }
   async function checkLogin(){
-    if (!pincode.value){ alert('Voer pincode in'); return; }
+    if (!/^\d{4}$/.test(pincode.value||'')){ alert('Pincode moet precies 4 cijfers zijn.'); return; }
     const acc = accounts[currentUserIndex];
     const inputHash = await sha256Hex(pincode.value);
     if (acc.pinHash === inputHash){
@@ -457,6 +463,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   function renderCartSummary(){
     const {total, items} = computeCart();
+    cartTotalEl = document.getElementById('cartTotal');
+    cartItemsEl = document.getElementById('cartItems');
     cartTotalEl.textContent = formatPrice(total);
     cartItemsEl.textContent = items;
     checkoutBtn.disabled = items === 0;
@@ -541,7 +549,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const inputHash = await sha256Hex(adminCode.value || '');
+    if (!/^\d{4}$/.test(adminCode.value||'')){ alert('Pincode moet precies 4 cijfers zijn.'); return; }
+    const inputHash = await sha256Hex(adminCode.value);
     if (acc.pinHash !== inputHash){
       alert('Verkeerde pincode!');
       const nextFails = (lock.fails||0)+1;
@@ -602,11 +611,11 @@ document.addEventListener('DOMContentLoaded', () => {
         <div id="newAccountForm" style="flex:1; min-width:260px; display:flex; flex-direction:column;">
           <input id="newName" placeholder="Naam" ${!(isAdmin()||isCoAdmin())?'disabled':''}>
           <div class="pin-wrap">
-            <input id="newPin" type="password" placeholder="Pincode (4 cijfers)" maxlength="4" inputmode="numeric" ${!(isAdmin()||isCoAdmin())?'disabled':''} autocomplete="new-password" autocapitalize="off" spellcheck="false">
+            <input id="newPin" type="password" placeholder="Pincode (exact 4 cijfers)" maxlength="4" inputmode="numeric" ${!(isAdmin()||isCoAdmin())?'disabled':''} autocomplete="new-password" autocapitalize="off" spellcheck="false">
             <button class="pin-toggle" id="toggleNewPin"${!(isAdmin()||isCoAdmin())?' disabled':''}>👁️</button>
           </div>
           <input type="number" id="newSaldo" placeholder="Startsaldo" ${!(isAdmin()||isCoAdmin())?'disabled':''}>
-          <label class="small" title="Markeer als gastaccount (mag niet onder €0)"><input type="checkbox" id="newIsGuest" ${!(isAdmin()||isCoAdmin())?'disabled':''}> Gastaccount</label>
+          <label class="small" title="Markeer als gastaccount (mag niet onder €0)"><input type="checkbox" id="newIsGuest" ${!(isAdmin()||isCoAdmin())?'disabled':''}> <strong>Gastaccount</strong></label>
           <select id="newRole" ${!isAdmin()?'disabled':''}>
             <option value="user">Rol: Gebruiker</option>
             <option value="coadmin">Rol: Co-admin</option>
@@ -657,8 +666,9 @@ document.addEventListener('DOMContentLoaded', () => {
         <span style="display:flex; align-items:center; gap:8px;">
           <label class="small" title="Schakel gaststatus">
             <input type="checkbox" data-type="${i}" ${acc.type==='gast'?'checked':''} ${!(isAdmin()||isCoAdmin())?'disabled':''}>
-            Gast
+            <strong>Gast</strong>
           </label>
+          ${isAdmin()?`<button data-rename="${i}">Naam wijzigen</button>`:''}
           ${isAdmin()?`<button data-role="${i}">Rol wijzigen</button>`:''}
           ${isAdmin()?`<button data-pin="${i}">PIN wijzigen</button>`:''}
           <button data-add="${i}">+€</button>
@@ -719,6 +729,7 @@ document.addEventListener('DOMContentLoaded', () => {
     adminSections.querySelectorAll('button[data-add]').forEach(btn=>btn.addEventListener('click',()=>addSaldo(+btn.dataset.add)));
     adminSections.querySelectorAll('button[data-pin]').forEach(btn=>btn.addEventListener('click',()=>changePin(+btn.dataset.pin)));
     adminSections.querySelectorAll('button[data-role]').forEach(btn=>btn.addEventListener('click',()=>changeRole(+btn.dataset.role)));
+    adminSections.querySelectorAll('button[data-rename]').forEach(btn=>btn.addEventListener('click',()=>renameAccount(+btn.dataset.rename)));
     const addProductBtn = adminSections.querySelector('#addProductBtn');
     if (addProductBtn) addProductBtn.addEventListener('click', addProduct);
     adminSections.querySelectorAll('button[data-pdel]').forEach(btn=>btn.addEventListener('click',()=>deleteProduct(+btn.dataset.pdel)));
@@ -756,7 +767,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const role = isAdmin() ? roleSelect.value : 'user';
 
     if (!name || !pin || isNaN(saldo)){ alert('Vul alle velden in!'); return; }
-    if (!/^\d{1,4}$/.test(pin)){ alert('Pincode moet 1–4 cijfers zijn.'); return; }
+    if (!/^\d{4}$/.test(pin)){ alert('Pincode moet precies 4 cijfers zijn.'); return; }
 
     const pinHash = await sha256Hex(pin);
     const type = isGuest ? 'gast' : 'vast';
@@ -825,6 +836,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     accounts[i].role = nieuw;
     logAction(`Rol gewijzigd: ${accounts[i].name} → ${nieuw}`);
+    saveAll(); loadAccountButtons(); updateAdminScreen();
+  }
+
+  function renameAccount(i){
+    if (!isAdmin()) return;
+    const oud = accounts[i].name;
+    const nieuw = prompt(`Nieuwe naam voor "${oud}":`, oud);
+    if (nieuw===null) return;
+    const clean = (nieuw||'').trim();
+    if (!clean){ alert('Naam mag niet leeg zijn.'); return; }
+    accounts[i].name = clean;
+    logAction(`Naam gewijzigd: ${oud} → ${clean}`);
     saveAll(); loadAccountButtons(); updateAdminScreen();
   }
 

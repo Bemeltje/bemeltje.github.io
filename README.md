@@ -1126,10 +1126,14 @@ document.addEventListener('DOMContentLoaded', () => {
             <input type="checkbox" data-type="${i}" ${acc.type === 'gast' ? 'checked' : ''} ${!(isAdmin() || isCoAdmin()) ? 'disabled' : ''}>
             <strong>Gast</strong>
           </label>
+          <div class="pin-wrap">
+            <button data-add="${i}">+€</button>
+            <button data-add-quick="${i}" data-amount="5" title="Snel +€5">+5</button>
+            <button data-add-quick="${i}" data-amount="10" title="Snel +€10">+10</button>
+          </div>
           ${isAdmin() ? `<button data-rename="${i}">Naam wijzigen</button>` : ''}
           ${isAdmin() ? `<button data-role="${i}">Rol wijzigen</button>` : ''}
           ${isAdmin() ? `<button data-pin="${i}">PIN wijzigen</button>` : ''}
-          <button data-add="${i}">+€</button>
           ${isAdmin() ? `<button class="red" data-del="${i}">X</button>` : ''}
         </span>
       `;
@@ -1145,9 +1149,10 @@ document.addEventListener('DOMContentLoaded', () => {
       row.className = 'item';
       row.innerHTML = `
         <span>${p.name} (€${formatPrice(p.price)}) - <span class="${voorraadClass}">Voorraad: ${p.stock}</span></span>
-        <span>
-          ${isAdmin() ? `<button data-price="${i}">Prijs wijzigen</button>` : ''}
+        <span style="display:flex; align-items:center; gap:8px;">
+          ${isAdmin() ? `<button data-restock-quick="${i}" data-amount="10" title="Snel +10 op voorraad">+10</button>` : ''}
           ${isAdmin() ? `<button data-restock="${i}">Voorraad bijvullen</button>` : ''}
+          ${isAdmin() ? `<button data-price="${i}">Prijs wijzigen</button>` : ''}
           ${isAdmin() ? `<button class="red" data-pdel="${i}">X</button>` : ''}
         </span>
       `;
@@ -1189,6 +1194,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (addAccountBtn) addAccountBtn.addEventListener('click', () => addAccount());
     adminSections.querySelectorAll('button[data-del]').forEach(btn => btn.addEventListener('click', () => deleteAccount(+btn.dataset.del)));
     adminSections.querySelectorAll('button[data-add]').forEach(btn => btn.addEventListener('click', () => addSaldo(+btn.dataset.add)));
+    adminSections.querySelectorAll('button[data-add-quick]').forEach(btn => btn.addEventListener('click', () => addSaldo(+btn.dataset.addQuick, +btn.dataset.amount)));
     adminSections.querySelectorAll('button[data-pin]').forEach(btn => btn.addEventListener('click', () => changePin(+btn.dataset.pin)));
     adminSections.querySelectorAll('button[data-role]').forEach(btn => btn.addEventListener('click', () => changeRole(+btn.dataset.role)));
     adminSections.querySelectorAll('button[data-rename]').forEach(btn => btn.addEventListener('click', () => renameAccount(+btn.dataset.rename)));
@@ -1196,7 +1202,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (addProductBtn) addProductBtn.addEventListener('click', addProduct);
     adminSections.querySelectorAll('button[data-pdel]').forEach(btn => btn.addEventListener('click', () => deleteProduct(+btn.dataset.pdel)));
     adminSections.querySelectorAll('button[data-restock]').forEach(btn => btn.addEventListener('click', () => restockProduct(+btn.dataset.restock)));
+    adminSections.querySelectorAll('button[data-restock-quick]').forEach(btn => btn.addEventListener('click', () => restockProduct(+btn.dataset.restockQuick, +btn.dataset.amount)));
     adminSections.querySelectorAll('button[data-price]').forEach(btn => btn.addEventListener('click', () => changePrice(+btn.dataset.price)));
+
 
     // Toggle gast/vast checkbox
     adminSections.querySelectorAll('input[data-type]').forEach(chk => {
@@ -1269,15 +1277,23 @@ document.addEventListener('DOMContentLoaded', () => {
     updateAdminScreen();
   }
 
-  async function addSaldo(i) {
-    const invoer = prompt('Bedrag toevoegen (positief getal):');
-    const bedrag = parseFloat(invoer);
-    if (!isFinite(bedrag) || bedrag <= 0) {
-      await showModal({ title: 'Fout', message: 'Voer een positief getal in.' });
+  async function addSaldo(i, bedrag = null) {
+    let bedragNum;
+    if (bedrag === null) {
+      const invoer = prompt('Bedrag toevoegen (positief getal):');
+      bedragNum = parseFloat(invoer);
+    } else {
+      bedragNum = bedrag;
+    }
+    
+    if (!isFinite(bedragNum) || bedragNum <= 0) {
+      if (bedragNum === null) { // Alleen een foutmelding geven als het handmatig wordt ingevoerd
+        await showModal({ title: 'Fout', message: 'Voer een positief getal in.' });
+      }
       return;
     }
-    accounts[i].saldo += Number(bedrag);
-    logAction(`Saldo +€${formatPrice(bedrag)} voor ${accounts[i].name}`, bedrag);
+    accounts[i].saldo += Number(bedragNum);
+    logAction(`Saldo +€${formatPrice(bedragNum)} voor ${accounts[i].name}`, bedragNum);
     saveAll();
     loadAccountButtons();
     updateAdminScreen();
@@ -1381,11 +1397,18 @@ document.addEventListener('DOMContentLoaded', () => {
     updateAdminScreen();
   }
 
-  async function restockProduct(i) {
-    if (!isAdmin()) return;
-    const add = parseInt(prompt(`Aantal bijvullen voor "${products[i].name}" (huidig: ${products[i].stock})`, "0"));
+  async function restockProduct(i, amount = null) {
+    let add;
+    if (amount === null) {
+      const invoer = prompt(`Aantal bijvullen voor "${products[i].name}" (huidig: ${products[i].stock})`, "0");
+      add = parseInt(invoer);
+    } else {
+      add = amount;
+    }
     if (!Number.isInteger(add) || add <= 0) {
-      await showModal({ title: 'Fout', message: 'Voer een positief geheel getal in.' });
+      if (amount === null) { // Alleen een foutmelding geven bij handmatige invoer
+        await showModal({ title: 'Fout', message: 'Voer een positief geheel getal in.' });
+      }
       return;
     }
     products[i].stock = Math.max(0, products[i].stock + add);
